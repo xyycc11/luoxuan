@@ -1,0 +1,10 @@
+.env
+.env.*
+!.env.example
+.venv/
+.idea/
+__pycache__/
+data/
+*.sqlite3
+*.sqlite3-*
+*.chat.lock

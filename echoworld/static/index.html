@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EchoWorld · 守卫与爬塔</title>
+<style>
+body{font:16px/1.6 system-ui,sans-serif;background:#101827;color:#e4ecf7;max-width:900px;margin:35px auto;padding:0 20px}
+section{background:#1d2b40;padding:22px;border:1px solid #354862;border-radius:14px;margin:18px 0}
+button,input,select{font:inherit;border-radius:7px;padding:9px 13px;margin:4px;border:1px solid #647891}
+button{background:#a5d7bf;color:#102118;cursor:pointer}button:disabled{opacity:.45;cursor:wait}
+input{width:min(92%,550px)}pre{white-space:pre-wrap;overflow-wrap:anywhere;color:#c6dcf6}small{color:#a3b7ce}
+</style>
+<h1>EchoWorld · 守卫与爬塔</h1>
+<p>规则决定许可和战斗结果，模型只负责对话。任务进度存入本地SQL，重启服务仍可恢复。</p>
+<small>仅本机教学演示 · 固定令牌不是正式账号 · 可选模型叙事，失败用模板 · 聊天推送已校验结果</small>
+<section>
+<label>演示玩家 <select id="player"><option value="alice">Alice</option><option value="bob">Bob</option></select></label>
+<button id="refresh">刷新存档</button><button id="recover">查询/恢复未确认请求</button>
+<button id="discard">放弃本地恢复标记</button><pre id="state">读取中…</pre>
+</section>
+<section>
+<h2>任务与战斗</h2>
+<div id="actions"><button data-action="accept">接受任务</button><button data-action="claim">领取herb</button>
+<button data-action="submit">交付herb</button><button data-action="enter">核验许可</button>
+<button data-action="tower">进入爬塔</button><button data-action="strike">攻击</button><button data-action="guard">防御</button></div>
+<pre id="scene">先接受任务，再交付herb取得许可。</pre>
+<small>每个存档只能开始一次爬塔；刷新页面不会重置存档，战斗选择携带当前轮次。</small>
+</section>
+<section>
+<h2>和守卫聊天</h2>
+<label>选择守卫 <select id="npc"><option value="venti">温迪 · 风与诗歌</option><option value="varka">法尔伽 · 骑士与指引</option></select></label>
+<small>共享许可规则，聊天记录分开；第一版为Skill驱动的受控闲聊，不是无限自由聊天。</small>
+<form id="chat"><input id="message" maxlength="2000" placeholder="我有许可，请让我进入" required><button>发送</button></form>
+<pre id="reply">可问“你好”“唱首诗”“我是新手，下一步怎么做”；聊天不发放许可。</pre><pre id="trace"></pre>
+</section>
+<script>
+let currentState = null;
+const el = id => document.getElementById(id);
+const pendingKey = () => 'echoworld:pending:' + el('player').value;
+function remember(kind,body){localStorage.setItem(pendingKey(),JSON.stringify({kind,body}))}
+function forget(){localStorage.removeItem(pendingKey())}
+function busy(on){document.querySelectorAll('button,input,select').forEach(item=>item.disabled=on)}
+async function request(suffix,body){
+  const player=el('player').value;
+  const response=await fetch(`/api/v1/worlds/world-${player}/${suffix}`,{
+    method:body?'POST':'GET',headers:{'Authorization':`Bearer demo-${player}`,'Content-Type':'application/json'},
+    body:body?JSON.stringify(body):undefined});
+  const data=await response.json();
+  if(!response.ok)throw Error(`HTTP ${response.status}: ${JSON.stringify(data.detail||data.code)}`);
+  return data;
+}
+function display(state){currentState=state;el('state').textContent=JSON.stringify(state,null,2)}
+async function run(job){busy(true);try{await job()}catch(error){el('scene').textContent=error.message}finally{busy(false)}}
+async function refresh(){
+  const state=await request('state');display(state);
+  if(state.combat){
+    el('scene').textContent=state.combat.status==='active'
+      ?`已恢复第${state.combat.round_no}轮：${state.combat.monster_id}；选择攻击或防御。`
+      :`本场已结束：${state.combat.status}；分数${state.combat.score}。`;
+  }else if(state.has_permit){el('scene').textContent='许可已获得，可以进入爬塔。'}
+  else if(state.quest_stage==='active'){el('scene').textContent='许可任务进行中；准备herb并交付。'}
+}
+async function showAction(result){
+  forget();await refresh();
+  el('scene').textContent=`${result.code}\n${result.rule_reply||''}`;
+  if(result.scene){
+    let scene=result.scene;
+    try{scene=await request(`actions/${result.request_id}/narration`,{})}
+    catch(error){el('trace').textContent='业务已提交；叙事查询失败，使用已保存模板。'}
+    el('scene').textContent+='\n'+scene.result_narration+'\n'+scene.encounter_narration;
+    for(const option of scene.options||[])el('scene').textContent+=`\n${option.title} (${option.choice_id})：${option.description}`;
+    el('scene').textContent+=`\n叙事来源：${scene.source}`;
+  }
+}
+el('refresh').onclick=()=>run(refresh);
+el('player').onchange=()=>run(async()=>{el('message').value='';el('reply').textContent='已切换玩家。';el('trace').textContent='';el('scene').textContent='读取该玩家的独立存档。';await refresh()});
+async function showHistory(){
+  const data=await request('chat/history?session_id=main&npc_id='+el('npc').value);
+  el('reply').textContent=data.turns.length?data.turns.map(turn=>'玩家：'+turn.user+'\n'+turn.assistant).join('\n\n'):'这位守卫还没有与你的聊天记录。';
+  el('trace').textContent='当前守卫：'+el('npc').selectedOptions[0].textContent;
+}
+el('npc').onchange=()=>run(showHistory);
+el('actions').onclick=event=>{
+  const action=event.target.dataset.action;
+  if(!action)return;
+  run(async()=>{
+    if(localStorage.getItem(pendingKey()))throw Error('有结果未确认的请求，请先点“查询/恢复未确认请求”。');
+    const body={action,request_id:crypto.randomUUID(),expected_version:currentState.version};
+    if(action==='strike'||action==='guard'){
+      if(!currentState?.combat||currentState.combat.status!=='active')throw Error('没有进行中的战斗。');
+      body.expected_round=currentState.combat.round_no;
+    }
+    remember('action',body);
+    await showAction(await request('action',body));
+  });
+};
+async function streamChat(body){
+  const player=el('player').value;
+  const response=await fetch(`/api/v1/worlds/world-${player}/chat/stream`,{
+    method:'POST',headers:{'Authorization':`Bearer demo-${player}`,'Content-Type':'application/json'},
+    body:JSON.stringify(body)});
+  if(!response.ok)throw Error(`HTTP ${response.status}`);
+  const reader=response.body.getReader(),decoder=new TextDecoder();
+  let buffer='',complete=false;
+  function accept(frame){
+    const lines=frame.split('\n');
+    const type=lines.find(line=>line.startsWith('event: '))?.slice(7);
+    const content=lines.filter(line=>line.startsWith('data: ')).map(line=>line.slice(6)).join('\n');
+    if(!content)return;
+    const data=JSON.parse(content);
+    if(type==='start'){el('reply').textContent='正在处理…';el('trace').textContent=`run_id=${data.run_id}`}
+    if(type==='result'){
+      el('reply').textContent=data.reply+'\n权威核验：'+data.rule_reply;
+      el('trace').textContent=`NPC=${data.npc_name||'守卫'} | run_id=${data.run_id} | ${data.stop_reason} | ${data.reply_policy} | 模型${data.model_calls}次 / 工具${data.tool_calls}次 | RAG=${data.rag_status} / 来源${data.sources?.length||0}条 | Trace保存=${data.trace_saved}`;
+    }
+    if(type==='error')throw Error(`聊天失败：${data.code}；run_id=${data.run_id}`);
+    if(type==='done'){complete=true;forget()}
+  }
+  try{
+    while(true){
+      const {value,done}=await reader.read();
+      buffer+=done?decoder.decode():decoder.decode(value,{stream:true});
+      let boundary;
+      while((boundary=buffer.indexOf('\n\n'))>=0){accept(buffer.slice(0,boundary));buffer=buffer.slice(boundary+2)}
+      if(done)break;
+    }
+    if(!complete)throw Error('连接结束但未收到done；点击恢复按钮，使用同一request_id查回结果。');
+  }catch(error){await reader.cancel();throw error}
+  finally{reader.releaseLock()}
+}
+el('chat').onsubmit=event=>{event.preventDefault();run(async()=>{
+  if(localStorage.getItem(pendingKey()))throw Error('请先恢复未确认请求，再提交新消息。');
+  const body={message:el('message').value,request_id:crypto.randomUUID(),session_id:'main',npc_id:el('npc').value};
+  remember('chat',body);await streamChat(body);await refresh();
+})};
+el('recover').onclick=()=>run(async()=>{
+  const raw=localStorage.getItem(pendingKey());
+  if(!raw){el('scene').textContent='没有待确认请求。';await refresh();return}
+  const pending=JSON.parse(raw);
+  if(pending.kind==='chat'){
+    if(pending.body.npc_id)el('npc').value=pending.body.npc_id;
+    await streamChat(pending.body);await refresh();return
+  }
+  const player=el('player').value;
+  const response=await fetch(`/api/v1/worlds/world-${player}/actions/${pending.body.request_id}`,{
+    headers:{'Authorization':`Bearer demo-${player}`}});
+  if(response.status===404){await showAction(await request('action',pending.body));return}
+  if(!response.ok)throw Error(`回执查询HTTP ${response.status}；未重新执行动作。`);
+  const receipt=await response.json();await showAction(receipt.response);
+});
+el('discard').onclick=()=>run(async()=>{
+  await refresh();forget();
+  el('scene').textContent='已刷新权威存档并清除本地待确认标记；不会撤销已提交动作，也不代表取消服务端任务。可按当前状态发起新请求。';
+});
+run(refresh);
+</script>
+</html>

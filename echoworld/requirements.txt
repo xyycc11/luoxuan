@@ -1,0 +1,15 @@
+# Day19本机已安装的直接依赖；不是完整锁文件；使用项目.venv。
+fastapi==0.142.2
+langgraph==1.2.12
+langgraph-checkpoint-sqlite==3.1.1
+uvicorn==0.54.0
+httpx==0.28.1
+sqlalchemy==2.1.2
+psycopg[binary]==3.3.6
+# Day20可选缓存适配器；无Redis配置时仍可使用SQL记忆。
+redis>=6,<8
+# Day22真实stdio MCP；按1.x官方接口实现，不自动迁移至2.x。
+mcp==1.30.0
+# Day23服务器版Milvus客户端；不依赖Windows不支持的Milvus Lite。
+pymilvus==2.6.17
+python-dotenv==1.2.4
