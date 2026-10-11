@@ -15,14 +15,27 @@ class Monster:
     monster_id: str
     fatal: bool = False
     weight: int = 1
+    bonus_points: int = 0  # 完成合法回合的固定奖励；与普通攻击分互斥。
+
+    def __post_init__(self):
+        if not isinstance(self.monster_id, str) or not self.monster_id.strip():
+            raise ValueError("monster_id must be non-empty text")
+        if type(self.fatal) is not bool or type(self.weight) is not int or self.weight <= 0:
+            raise ValueError("monster fatal/weight is invalid")
+        if type(self.bonus_points) is not int or self.bonus_points < 0 or (self.fatal and self.bonus_points):
+            raise ValueError("bonus must be non-negative and only for non-fatal encounters")
 
 
 DEFAULT_MONSTERS = (
-    Monster("mistling", weight=5),
-    Monster("stonebeast", weight=3),
-    Monster("ember_wisp", weight=2),
-    Monster("void_reaper", fatal=True),
-    Monster("blood_moon", fatal=True),
+    Monster("丘丘人", weight=30),
+    Monster("木盾丘丘暴徒", weight=20),
+    Monster("火史莱姆", weight=15),
+    Monster("风丘丘萨满", weight=10),
+    Monster("遗迹守卫", weight=8),
+    Monster("大伟丘", weight=1, bonus_points=50),
+    # 即死是本项目同人玩法，不是对原神官方战斗机制的描述。
+    Monster("遗迹重机", fatal=True, weight=8),
+    Monster("深渊咏者", fatal=True, weight=8),
 )
 
 
@@ -32,6 +45,7 @@ class TurnEvent:
     monster_id: str
     choice_id: str
     fatal: bool
+    points_awarded: int = 0  # 旧存档事件缺此字段时仍可读取。
 
 
 @dataclass
@@ -90,14 +104,14 @@ def advance_round(state: CombatState, choice_id: str, expected_round: int) -> Tu
     monster = state.current_monster
     if monster is None:
         raise RuntimeError("active combat has no monster")
-    event = TurnEvent(state.round_no, monster.monster_id, choice_id, monster.fatal)
+    points = 0 if monster.fatal else (monster.bonus_points or (1 if choice_id == "strike" else 0))
+    event = TurnEvent(state.round_no, monster.monster_id, choice_id, monster.fatal, points)
     state.events.append(event)
     if monster.fatal:
         state.status = "dead"
         return TurnResult("PLAYER_DEAD", event)
 
-    if choice_id == "strike":
-        state.score += 1
+    state.score += points
     if state.round_no == MAX_ROUNDS:
         state.status = "cleared"
         return TurnResult("TOWER_CLEARED", event)

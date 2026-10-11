@@ -30,6 +30,7 @@ from .chat_recovery import ChatRecovery
 from .action_store import ActionReceipt, action_scope
 from .narration import DeepSeekNarrator, narrate_facts
 from .guard_skills import load_guard_skill, list_guards, beginner_question
+from .shared_knowledge import SharedKnowledge, KnowledgeResult, FAQ
 
 
 class ChatRequest(BaseModel):
@@ -69,6 +70,8 @@ class ChatResponse(BaseModel):
     npc_id: str = "guard"
     npc_name: str = "守卫"
     skill_fingerprint: str | None = None
+    public_knowledge_status: str = "disabled"
+    public_knowledge_sources: list[dict] = Field(default_factory=list)
 
 
 class PreferenceRequest(BaseModel):
@@ -76,6 +79,21 @@ class PreferenceRequest(BaseModel):
     style: Literal["brief", "detailed", "stepwise"]
     consent: bool = Field(strict=True)
     ttl_seconds: int = Field(default=86400, strict=True, ge=600, le=2592000)
+
+
+class KnowledgeProposalRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    npc_id: Literal["venti", "varka"]
+    topic: Literal["permit", "quest", "tower", "combat", "memory"]
+    suggestion: str = Field(strict=True, min_length=1, max_length=600)
+    consent: bool = Field(strict=True)
+    request_id: str = Field(strict=True, pattern=r"^[a-zA-Z0-9_-]{1,80}$")
+
+
+class KnowledgeFeedbackRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    version: int = Field(strict=True, ge=1)
+    helpful: bool = Field(strict=True)
 
 
 class ActionRequest(BaseModel):
@@ -95,7 +113,7 @@ class ActionRequest(BaseModel):
 
 def create_app(model=None, *, database_url: str = "sqlite+pysqlite:///:memory:", cache=None, rag=None,
                memory_embedder=None, memory_index=None, checkpoint_path=None, narrator=None, combat_seed=2,
-               environment_memory=False) -> FastAPI:
+               environment_memory=False, shared_embedder=None, shared_index=None) -> FastAPI:
     # 工厂默认内存SQL，便于隔离测试；模块app使用文件URL。
     @asynccontextmanager
     async def lifespan(app):
@@ -105,6 +123,7 @@ def create_app(model=None, *, database_url: str = "sqlite+pysqlite:///:memory:",
         finally:
             app.state.recovery.close()
             app.state.store.close()
+            app.state.shared_knowledge.close()
             if isinstance(cache, RedisRecentCache):
                 cache.close()
             if rag is not None:
@@ -126,6 +145,10 @@ def create_app(model=None, *, database_url: str = "sqlite+pysqlite:///:memory:",
                     if memory_embedder is not None or memory_index is not None
                     else LongMemory.from_environment(app.state.store) if environment_memory or database_url == DEFAULT_DATABASE_URL
                     else LongMemory(app.state.store))
+                app.state.shared_knowledge = (SharedKnowledge(app.state.store, shared_embedder, shared_index)
+                    if shared_embedder is not None or shared_index is not None
+                    else SharedKnowledge.from_environment(app.state.store) if environment_memory or database_url == DEFAULT_DATABASE_URL
+                    else SharedKnowledge(app.state.store))
         return app.state.store
 
     @app.exception_handler(RequestConflict)
@@ -172,6 +195,34 @@ def create_app(model=None, *, database_url: str = "sqlite+pysqlite:///:memory:",
         if not app.state.long_memory.revoke(game, memory_id):
             raise HTTPException(404, "记忆不存在")
         return {"ok": True}
+
+    @router.get("/{world_id}/knowledge/topics")
+    def knowledge_topics(game: GameState = Depends(get_game)):
+        return {"topics": [{"topic": key, "title": row["title"], "public_preview": row["text"]}
+                            for key, row in FAQ.items()],
+                "notice": "只审核发布标准FAQ；不公开建议原文，不训练模型，不改规则；可撤回。"}
+
+    @router.post("/{world_id}/knowledge/candidates")
+    def propose_knowledge(req: KnowledgeProposalRequest, game: GameState = Depends(get_game)):
+        return app.state.shared_knowledge.propose(game, req.npc_id, req.topic, req.suggestion,
+                                                  consent=req.consent, request_id=req.request_id)
+
+    @router.get("/{world_id}/knowledge/candidates")
+    def own_knowledge_candidates(game: GameState = Depends(get_game)):
+        return {"candidates": app.state.shared_knowledge.candidates(game)}
+
+    @router.delete("/{world_id}/knowledge/candidates/{candidate_id}")
+    def withdraw_knowledge(candidate_id: str, game: GameState = Depends(get_game)):
+        return app.state.shared_knowledge.withdraw(game, candidate_id)
+
+    @router.get("/{world_id}/knowledge/public")
+    def public_knowledge(npc_id: Literal["venti", "varka"] = "venti", game: GameState = Depends(get_game)):
+        result = app.state.shared_knowledge.retrieve("共享知识", npc_id, k=5)
+        return {"status": result.status, "entries": result.hits}
+
+    @router.post("/{world_id}/knowledge/public/{entry_id}/feedback")
+    def knowledge_feedback(entry_id: str, req: KnowledgeFeedbackRequest, game: GameState = Depends(get_game)):
+        return app.state.shared_knowledge.feedback(game, entry_id, req.version, req.helpful)
 
     @router.get("/{world_id}/state")
     def read_state(world_id: str, player: str = Depends(get_player), db: Session = Depends(get_db)):
@@ -226,6 +277,10 @@ def create_app(model=None, *, database_url: str = "sqlite+pysqlite:///:memory:",
                     history = memory.load_recent(scope)
                 retrieved = RagResult("disabled")
                 remembered = MemoryResult("skipped_facts" if factual else "skipped_irrelevant")
+                shared = KnowledgeResult("disabled_legacy_guard")
+                if persona is not None:
+                    with trace.span("public_knowledge"):
+                        shared = app.state.shared_knowledge.retrieve(req.message, req.npc_id)
                 if not factual and is_preference_question(req.message):
                     with trace.span("long_memory"):
                         remembered = app.state.long_memory.retrieve(req.message, game)
@@ -235,6 +290,7 @@ def create_app(model=None, *, database_url: str = "sqlite+pysqlite:///:memory:",
                                      else rag.retrieve(req.message, game.world_id))
                 app.state.recovery.save_context(trace.run_id, {
                     "history": history, "rag": asdict(retrieved), "memories": asdict(remembered),
+                    "shared": asdict(shared),
                     "npc_id": req.npc_id, "skill_fingerprint": skill_fingerprint})
             else:
                 # 恢复使用原上下文，不把不同检索结果混进同一个中断图。
@@ -244,19 +300,23 @@ def create_app(model=None, *, database_url: str = "sqlite+pysqlite:///:memory:",
                     raise RequestConflict("CHECKPOINT_SKILL_CHANGED")
                 history = context["history"]
                 retrieved, remembered = RagResult(**context["rag"]), MemoryResult(**context["memories"])
+                shared = KnowledgeResult(**context.get("shared", {"status": "disabled"}))
                 with ensure_store().sessions.begin() as db:
                     if db.get(GameSave, game.world_id).version != job["game_version"]:
                         raise RequestConflict("CHECKPOINT_STATE_CHANGED")
                 if app.state.long_memory.refresh(remembered.hits, game) != remembered.hits:
                     raise RequestConflict("CHECKPOINT_MEMORY_CHANGED")
+                if app.state.shared_knowledge.refresh(shared.hits, req.npc_id) != shared.hits:
+                    raise RequestConflict("CHECKPOINT_KNOWLEDGE_CHANGED")
                 trace.summary["resumed"] = True
             with trace.span("agent"):
                 result = run_graph_turn(game, req.message, model, history=history["turns"],
                     game_facts={"has_permit": game.has_permit, "inventory": game.inventory,
-                                "quest_stage": game.quest_stage}, lore=retrieved.hits, memories=remembered.hits,
+                                "quest_stage": game.quest_stage}, lore=retrieved.hits + shared.hits, memories=remembered.hits,
                     checkpointer=app.state.recovery.checkpointer, thread_id=trace.run_id, persona=persona)
             used_ids = set(result["context_meta"].get("kept_source_ids", []))
             used_lore = [row for row in retrieved.hits if row["id"] in used_ids]
+            used_shared = [row for row in shared.hits if row["id"] in used_ids]
             memory_ids = set(result["context_meta"].get("kept_memory_ids", []))
             used_memories = [row for row in remembered.hits if row["id"] in memory_ids]
             # turn_result已过滤文案；刷新快照后再校验，避免直接信模型执行前的旧状态。
@@ -264,12 +324,14 @@ def create_app(model=None, *, database_url: str = "sqlite+pysqlite:///:memory:",
                 with ensure_store().lock, ensure_store().sessions.begin() as db:
                     latest, _ = unpack(load_owned(db, game.world_id, game.player_id))
                 used_memories = app.state.long_memory.refresh(used_memories, latest)
+                used_shared = app.state.shared_knowledge.refresh(used_shared, req.npc_id)
                 checked = check_reply(latest, req.message, result["reply"], lore=used_lore,
-                                      memories=used_memories, persona=persona)
+                                      memories=used_memories, persona=persona, public_faq=used_shared)
             saved = {"cache_status": "deferred" if cache else "disabled"}
             degraded = (result["stop_reason"] != "FINISHED" or
                         retrieved.status in {"embedding_error", "index_error"} or
                         remembered.status in {"embedding_error", "index_error"})
+            degraded = degraded or "error" in shared.status
             trace.summary.update(status="degraded" if degraded else "completed",
                                  stop_reason=result["stop_reason"], model_calls=result["model_calls"],
                                  tool_calls=result["tool_calls"], reply_policy=checked.policy,
@@ -279,6 +341,9 @@ def create_app(model=None, *, database_url: str = "sqlite+pysqlite:///:memory:",
                                  source_ids=[row["id"] for row in used_lore],
                                  long_memory_status=remembered.status,
                                  long_memory_ids=[row["id"] for row in used_memories])
+            trace.summary.update(public_knowledge_status=shared.status,
+                public_knowledge_sources=[{"id": row["id"], "version": row["version"],
+                    "rules_version": row["rules_version"]} for row in used_shared])
         except Exception:
             trace.summary.update(status="failed", stop_reason="CHAT_FAILED")
             trace.save(ensure_store())
@@ -295,6 +360,9 @@ def create_app(model=None, *, database_url: str = "sqlite+pysqlite:///:memory:",
             sources=[{"id": row["id"], "source": row["source"], "score": row["score"]} for row in used_lore],
             npc_id=req.npc_id, npc_name=persona.display_name if persona else "守卫",
             skill_fingerprint=skill_fingerprint,
+            public_knowledge_status=shared.status,
+            public_knowledge_sources=[{"id": row["id"], "version": row["version"],
+                "rules_version": row["rules_version"]} for row in used_shared],
         )
         try:
             with trace.span("persist"):
@@ -312,6 +380,19 @@ def create_app(model=None, *, database_url: str = "sqlite+pysqlite:///:memory:",
             pass
         return response
 
+    def safe_chat_receipt(payload, game):
+        response = ChatResponse(**payload)
+        sources = response.public_knowledge_sources
+        if sources and len(app.state.shared_knowledge.refresh(sources, response.npc_id)) != len(sources):
+            # 回执保留原运行事实，但不能把已撤回FAQ伪装成新的有效回答。
+            persona = load_guard_skill(response.npc_id)
+            response.reply = check_reply(game, "许可", "", persona=persona).reply + "\n历史公共提示已撤回、过期或变更，本次不再展示。"
+            response.rule_reply = guard_reply(game, "")
+            response.reply_policy = "historical_public_faq_hidden"
+            response.public_knowledge_status = "receipt_knowledge_changed"
+            response.public_knowledge_sources = []
+        return response
+
     def durable_chat(req, game, trace=None):
         recovery = app.state.recovery
         with recovery.execution_lock():
@@ -320,7 +401,7 @@ def create_app(model=None, *, database_url: str = "sqlite+pysqlite:///:memory:",
                 game, _ = unpack(load_owned(db, game.world_id, game.player_id))
             job = recovery.prepare(game, req.model_dump())
             if job["response"] is not None:
-                return ChatResponse(**job["response"])
+                return safe_chat_receipt(job["response"], game)
             trace = trace or RunTrace(ChatScope(game.player_id, game.world_id, req.session_id, req.npc_id))
             trace.run_id = job["run_id"]
             try:
@@ -368,6 +449,8 @@ def create_app(model=None, *, database_url: str = "sqlite+pysqlite:///:memory:",
         result = app.state.recovery.read(game, run_id)
         if result is None:
             raise HTTPException(404, "聊天任务不存在")
+        if result["response"] is not None:
+            result["response"] = safe_chat_receipt(result["response"], game).model_dump()
         return {key: value for key, value in result.items() if key != "request"}
 
     @router.post("/{world_id}/chat/runs/{run_id}/resume", response_model=ChatResponse)

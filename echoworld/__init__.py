@@ -1,2 +1,4 @@
-"""EchoWorld Day 8 最小规则原型。"""
+"""EchoWorld：原神主题双守卫与文字爬塔教学项目。"""
+
+__version__ = "v1"
 

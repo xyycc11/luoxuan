@@ -2,15 +2,17 @@
 <html lang="zh-CN">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>EchoWorld · 守卫与爬塔</title>
+<title>EchoWorld · 提瓦特风之试炼</title>
 <style>
 body{font:16px/1.6 system-ui,sans-serif;background:#101827;color:#e4ecf7;max-width:900px;margin:35px auto;padding:0 20px}
 section{background:#1d2b40;padding:22px;border:1px solid #354862;border-radius:14px;margin:18px 0}
 button,input,select{font:inherit;border-radius:7px;padding:9px 13px;margin:4px;border:1px solid #647891}
 button{background:#a5d7bf;color:#102118;cursor:pointer}button:disabled{opacity:.45;cursor:wait}
 input{width:min(92%,550px)}pre{white-space:pre-wrap;overflow-wrap:anywhere;color:#c6dcf6}small{color:#a3b7ce}
+input[type=checkbox]{width:auto}textarea{width:95%;font:inherit;padding:8px;box-sizing:border-box}
 </style>
-<h1>EchoWorld · 守卫与爬塔</h1>
+<h1>EchoWorld · 提瓦特风之试炼</h1>
+<p>蒙德主题同人文字游戏 · 温迪与法尔伽守卫 · 风之试炼塔为项目原创副本，非原神官方内容。</p>
 <p>规则决定许可和战斗结果，模型只负责对话。任务进度存入本地SQL，重启服务仍可恢复。</p>
 <small>仅本机教学演示 · 固定令牌不是正式账号 · 可选模型叙事，失败用模板 · 聊天推送已校验结果</small>
 <section>
@@ -20,6 +22,7 @@ input{width:min(92%,550px)}pre{white-space:pre-wrap;overflow-wrap:anywhere;color
 </section>
 <section>
 <h2>任务与战斗</h2>
+<small>新开塔使用原神怪物名称；大伟丘每轮1%，非致死，完成本轮任一选择+50分。已开塔旧存档保留原怪物池。</small>
 <div id="actions"><button data-action="accept">接受任务</button><button data-action="claim">领取herb</button>
 <button data-action="submit">交付herb</button><button data-action="enter">核验许可</button>
 <button data-action="tower">进入爬塔</button><button data-action="strike">攻击</button><button data-action="guard">防御</button></div>
@@ -33,17 +36,28 @@ input{width:min(92%,550px)}pre{white-space:pre-wrap;overflow-wrap:anywhere;color
 <form id="chat"><input id="message" maxlength="2000" placeholder="我有许可，请让我进入" required><button>发送</button></form>
 <pre id="reply">可问“你好”“唱首诗”“我是新手，下一步怎么做”；聊天不发放许可。</pre><pre id="trace"></pre>
 </section>
+<section>
+<h2>帮助守卫积累公共教学知识</h2>
+<small>这是“受控知识演进”，不是自动训练模型。只发布审核通过的标准FAQ；建议原文不公开，个人聊天不会自动提交。请勿填写姓名、联系方式、密钥或其他私密信息。</small>
+<form id="share">
+<label>建议主题 <select id="topic"></select></label><pre id="preview"></pre>
+<textarea id="suggestion" maxlength="600" rows="3" placeholder="例如：希望新手能看到交付herb的前置条件。不要填私人信息。" required></textarea>
+<label><input type="checkbox" id="consent" required>我同意本条建议用于人工审核并发布下方标准FAQ，可随时撤回；建议原文不对其他玩家公开。</label>
+<button>提交待审建议</button><button id="knowledgeRefresh" type="button">刷新待审状态与公共FAQ</button>
+</form>
+<pre id="shareStatus"></pre><div id="myCandidates"></div><div id="publicFaq"></div>
+</section>
 <script>
 let currentState = null;
 const el = id => document.getElementById(id);
 const pendingKey = () => 'echoworld:pending:' + el('player').value;
 function remember(kind,body){localStorage.setItem(pendingKey(),JSON.stringify({kind,body}))}
 function forget(){localStorage.removeItem(pendingKey())}
-function busy(on){document.querySelectorAll('button,input,select').forEach(item=>item.disabled=on)}
-async function request(suffix,body){
+function busy(on){document.querySelectorAll('button,input,select,textarea').forEach(item=>item.disabled=on)}
+async function request(suffix,body,method){
   const player=el('player').value;
   const response=await fetch(`/api/v1/worlds/world-${player}/${suffix}`,{
-    method:body?'POST':'GET',headers:{'Authorization':`Bearer demo-${player}`,'Content-Type':'application/json'},
+    method:method||(body?'POST':'GET'),headers:{'Authorization':`Bearer demo-${player}`,'Content-Type':'application/json'},
     body:body?JSON.stringify(body):undefined});
   const data=await response.json();
   if(!response.ok)throw Error(`HTTP ${response.status}: ${JSON.stringify(data.detail||data.code)}`);
@@ -73,13 +87,13 @@ async function showAction(result){
   }
 }
 el('refresh').onclick=()=>run(refresh);
-el('player').onchange=()=>run(async()=>{el('message').value='';el('reply').textContent='已切换玩家。';el('trace').textContent='';el('scene').textContent='读取该玩家的独立存档。';await refresh()});
+el('player').onchange=()=>run(async()=>{el('message').value='';el('suggestion').value='';el('consent').checked=false;el('shareStatus').textContent='';el('myCandidates').replaceChildren();el('publicFaq').replaceChildren();el('reply').textContent='已切换玩家。';el('trace').textContent='';el('scene').textContent='读取该玩家的独立存档。';await refresh();await loadKnowledge()});
 async function showHistory(){
   const data=await request('chat/history?session_id=main&npc_id='+el('npc').value);
   el('reply').textContent=data.turns.length?data.turns.map(turn=>'玩家：'+turn.user+'\n'+turn.assistant).join('\n\n'):'这位守卫还没有与你的聊天记录。';
   el('trace').textContent='当前守卫：'+el('npc').selectedOptions[0].textContent;
 }
-el('npc').onchange=()=>run(showHistory);
+el('npc').onchange=()=>run(async()=>{await showHistory();await loadKnowledge()});
 el('actions').onclick=event=>{
   const action=event.target.dataset.action;
   if(!action)return;
@@ -111,7 +125,7 @@ async function streamChat(body){
     if(type==='start'){el('reply').textContent='正在处理…';el('trace').textContent=`run_id=${data.run_id}`}
     if(type==='result'){
       el('reply').textContent=data.reply+'\n权威核验：'+data.rule_reply;
-      el('trace').textContent=`NPC=${data.npc_name||'守卫'} | run_id=${data.run_id} | ${data.stop_reason} | ${data.reply_policy} | 模型${data.model_calls}次 / 工具${data.tool_calls}次 | RAG=${data.rag_status} / 来源${data.sources?.length||0}条 | Trace保存=${data.trace_saved}`;
+      el('trace').textContent=`NPC=${data.npc_name||'守卫'} | run_id=${data.run_id} | ${data.stop_reason} | ${data.reply_policy} | 模型${data.model_calls}次 / 工具${data.tool_calls}次 | RAG=${data.rag_status} / 来源${data.sources?.length||0}条 | 公共FAQ=${data.public_knowledge_status} / ${data.public_knowledge_sources?.length||0}条 | Trace保存=${data.trace_saved}`;
     }
     if(type==='error')throw Error(`聊天失败：${data.code}；run_id=${data.run_id}`);
     if(type==='done'){complete=true;forget()}
@@ -152,6 +166,46 @@ el('discard').onclick=()=>run(async()=>{
   await refresh();forget();
   el('scene').textContent='已刷新权威存档并清除本地待确认标记；不会撤销已提交动作，也不代表取消服务端任务。可按当前状态发起新请求。';
 });
-run(refresh);
+let topicRows=[];
+function topicPreview(){el('preview').textContent='审核通过后公开的标准文本：\n'+(topicRows.find(row=>row.topic===el('topic').value)?.public_preview||'')}
+async function loadKnowledge(){
+  const topics=await request('knowledge/topics');
+  if(!topicRows.length){
+    topicRows=topics.topics;
+    for(const row of topicRows){const option=document.createElement('option');option.value=row.topic;option.textContent=row.title;el('topic').append(option)}
+    topicPreview();
+  }
+  const own=await request('knowledge/candidates');el('myCandidates').replaceChildren();
+  const label=document.createElement('p');label.textContent='我的建议（仅自己可见）：';el('myCandidates').append(label);
+  for(const row of own.candidates){
+    const line=document.createElement('div');line.textContent=`${row.topic} · ${row.status} · ${row.id} `;
+    if(row.status!=='withdrawn'){
+      const button=document.createElement('button');button.textContent='撤回并清除原建议';
+      button.onclick=()=>run(async()=>{await request('knowledge/candidates/'+row.id,undefined,'DELETE');await loadKnowledge();el('shareStatus').textContent='已撤回。后续检索不可用；已送达的历史对话无法从他人记忆中抹除。'});
+      line.append(button);
+    }
+    el('myCandidates').append(line);
+  }
+  const published=await request('knowledge/public?npc_id='+el('npc').value);el('publicFaq').replaceChildren();
+  const heading=document.createElement('p');heading.textContent=published.entries.length?'当前已审核公共FAQ：':'尚无已发布FAQ，仍使用原有安全指引。';el('publicFaq').append(heading);
+  for(const row of published.entries){
+    const line=document.createElement('pre');line.textContent=`${row.id} v${row.version}\n${row.text}`;el('publicFaq').append(line);
+    for(const helpful of [true,false]){
+      const button=document.createElement('button');button.textContent=helpful?'这条有帮助':'这条需改进';
+      button.onclick=()=>run(async()=>{await request('knowledge/public/'+row.id+'/feedback',{version:row.version,helpful});el('shareStatus').textContent='反馈已记录；同一版本不会重复计票，反馈不会自动发布新知识。'});
+      el('publicFaq').append(button);
+    }
+  }
+}
+el('topic').onchange=topicPreview;
+el('knowledgeRefresh').onclick=()=>run(loadKnowledge);
+el('share').onsubmit=event=>{event.preventDefault();run(async()=>{
+  if(!el('consent').checked)throw Error('需要明确同意；聊天不会自动替你授权。');
+  const result=await request('knowledge/candidates',{npc_id:el('npc').value,topic:el('topic').value,
+    suggestion:el('suggestion').value,consent:true,request_id:crypto.randomUUID()});
+  el('shareStatus').textContent=`已进入待审区：${result.id}，当前${result.status}。需本地管理员核验，不会自动公开。`;
+  el('suggestion').value='';el('consent').checked=false;await loadKnowledge();
+})};
+run(async()=>{await refresh();await loadKnowledge()});
 </script>
 </html>

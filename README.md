@@ -1,6 +1,6 @@
-# EchoWorld · 双守卫与文字爬塔
+# EchoWorld v1 · 提瓦特双守卫与文字爬塔
 
-一个可本地运行的游戏 NPC Agent 学习项目：通过许可任务进入十轮文字爬塔，与温迪、法尔伽两位守卫聊天。
+一个可本地运行的原神主题游戏 NPC Agent 学习项目：通过许可任务进入蒙德附近的风之试炼塔，与温迪、法尔伽两位守卫聊天。当前版本 **v1**（2026-10-11），版本标记可通过`echoworld.__version__`查看。
 
 **核心原则：模型参与表达与只读工具选择，代码决定许可、背包、任务、战斗和存档。**
 
@@ -16,7 +16,43 @@
 - **可选模型与 RAG**：DeepSeek 用于只读决策和战斗叙事，千问用于向量化，Milvus 服务器适配用于检索；结果须做来源或 SQL 有效性回查。外部真实服务整链仍待配置与验收。
 - **私有偏好**：明确同意后保存有限风格偏好，支持到期、撤回与版本核验；不会自动采集聊天并公开给所有玩家。
 
-闲聊第一版采用“模型选择有限 intent/variant，代码展示已审定话术”，不是无限自由生成的角色聊天。公共知识自进化、Sandbox 和生产多机调度未实现。
+闲聊第一版采用“模型选择有限 intent/variant，代码展示已审定话术”，不是无限自由生成的角色聊天。已增加受控公共知识演进，但不是自动训练或开放式自我改写；Sandbox和生产多机调度未实现。
+
+## v1新增：原神主题与稀有奖励
+
+世界背景为提瓦特·蒙德，**风之试炼塔、许可任务、计分与即死判定为原创同人玩法，非原神官方内容**；没有上传官方游戏图片、音乐或其他游戏资源。
+
+| 怪物 | 每轮抽取权重/概率 | 回合结算 |
+| --- | --- | --- |
+| 丘丘人 | 30/100 | 攻击+1，防御+0 |
+| 木盾丘丘暴徒 | 20/100 | 攻击+1，防御+0 |
+| 火史莱姆 | 15/100 | 攻击+1，防御+0 |
+| 风丘丘萨满 | 10/100 | 攻击+1，防御+0 |
+| 遗迹守卫 | 8/100 | 攻击+1，防御+0 |
+| **大伟丘** | **1/100（1%）** | **不致死，完成任一合法选择恰好+50分** |
+| 遗迹重机 | 8/100 | 本项目设为致死，攻击/防御均结束爬塔 |
+| 深渊咏者 | 8/100 | 本项目设为致死，攻击/防御均结束爬塔 |
+
+大伟丘刷出时不提前发奖，攻击不叠加普通1分，重复请求和重复叙事不重复领奖。十轮未死通关，固定seed便于复现，1%不保证每100轮必遇一次。旧开塔存档保留原怪物池和已有分数，不自动换怪或补发奖励。
+
+## v1新增：双守卫受控知识演进
+
+显式分享并同意公开 → 私人待审 → 受信本地人工核验 → 版本化标准FAQ → 两守卫引用 → 反馈/撤回/下线/回滚。
+
+- 第一版只有许可、任务、爬塔、战斗、记忆5类规则核验后的标准FAQ；不会公开原始建议、私人聊天或作者身份。
+- 已知主题可离线SQL检索，公共Milvus索引为可选显式导入，独立于私人记忆集合；候选需经SQL有效性、版本、授权、TTL及规则指纹回查。
+- 审核仅通过本地`evolution_admin`，不开放玩家或模型审批权限；下线、撤回、回滚都有版本/审计。不是生产RBAC或完整隐私合规系统。
+- 规则变更会使旧FAQ失效，必须重新核验。修改世界观后如已导入真实Milvus，应显式重导入；不会自动消耗Embedding额度。
+
+网页提交建议后，将`<候选ID>`替换为真实值，并指向与服务相同的现有存档：
+
+```powershell
+./.venv/Scripts/python.exe -m echoworld.evolution_admin --database ./echoworld/data/echoworld.sqlite3 list
+./.venv/Scripts/python.exe -m echoworld.evolution_admin --database ./echoworld/data/echoworld.sqlite3 approve <候选ID> --reviewer local-admin --note "已对照当前规则核验标准FAQ"
+./.venv/Scripts/python.exe -m echoworld.evolution_admin --database ./echoworld/data/echoworld.sqlite3 report
+```
+
+玩家可撤回自己的建议；管理员也可`reject`、`disable`、`rollback`。共享检索有效性撤销不等于能够抹除已经送达别人的历史聊天。反馈不能代替事实核验，不宣称已证明满意度提升。可选`ingest`会调用外部Embedding并写专用集合，需自行确认配置与费用。
 
 ## 快速运行
 
@@ -89,6 +125,7 @@ Windows 使用 Milvus 服务器，不把内存替身或 Milvus Lite 当作已完
 | `guard_skills.py`、`npc_skills/`、`reply_guard.py` | 双守卫角色资产、有限话术与事实回复校验 |
 | `database.py`、`action_store.py`、`chat_recovery.py` | 存档、CAS/幂等回执、持久化图与恢复 |
 | `chat_memory.py`、`long_memory.py`、`lore_rag.py` | NPC隔离近期记忆、私有偏好、授权世界观检索 |
+| `shared_knowledge.py`、`evolution_admin.py` | 公共标准FAQ的授权候选、人工审核、版本/审计、有效性回查和反馈 |
 | `context.py`、`run_trace.py`、`evaluation.py` | 上下文预算、脱敏事件与离线评测 |
 | `narration.py`、`deepseek_agent.py`、`embeddings.py` | 可选模型/向量化适配器与叙事降级 |
 | `mcp_server.py` | 独立只读 MCP stdio 演示；主图仍本地调用工具 |
@@ -99,9 +136,10 @@ Windows 使用 Milvus 服务器，不把内存替身或 Milvus Lite 当作已完
 ```powershell
 ./.venv/Scripts/python.exe -m unittest discover -s echoworld -p "test_*.py" -q
 ./.venv/Scripts/python.exe -m echoworld.verify_main
+./.venv/Scripts/python.exe -m echoworld.verify_guard_evolution
 ```
 
-2026-10-09 开发副本实测 202 项测试通过。真实临时本地服务的 12 组检查涵盖许可任务、十轮爬塔、模板叙事、进程重启、动作回执、请求冲突、SSE结果重放、聊天去重及双守卫权限/角色/历史隔离/重启重放。
+2026-10-10开发副本全量246项测试通过，涵盖知识授权/审定发布/版本撤回与恢复、大伟丘奖励/重复请求/SQL保存与旧存档兼容。前次临时本地HTTP知识演进10组通过。v1发布副本的实际复验结果记录在`CHANGELOG.md`，不将历史202项或旧HTTP结果冒充本次复验。
 
 这些验证使用离线或脚本模型、临时数据库；缓存测试使用可控替身。不能将其表述为真实模型聊天质量、真实 Redis/Milvus 全链或生产上线能力已验收。
 

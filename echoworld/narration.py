@@ -2,7 +2,7 @@
 
 import json
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -29,14 +29,17 @@ def scene_facts(state: CombatState, result: TurnResult | None = None) -> dict:
 
     last_event = result.event if result is not None else None
     return {
+        "setting": "提瓦特·蒙德附近的风之试炼塔（项目原创同人副本，非官方剧情）",
         "outcome": result.code if result is not None else "COMBAT_STARTED",
         "last_round": last_event.round_no if last_event else None,
         "last_monster": last_event.monster_id if last_event else None,
         "last_choice": last_event.choice_id if last_event else None,
+        "last_points_awarded": last_event.points_awarded if last_event else 0,
         "status": state.status,
         "score": state.score,
         "next_round": state.round_no if state.status == "active" else None,
         "next_monster": state.current_monster.monster_id if state.status == "active" else None,
+        "next_bonus_points": state.current_monster.bonus_points if state.status == "active" else 0,
         "allowed_choices": list(CHOICES) if state.status == "active" else [],
     }
 
@@ -86,13 +89,15 @@ def template_scene(facts: dict) -> BattleScene:
     if outcome == "PLAYER_DEAD":
         result = f"第{facts['last_round']}轮遭遇{facts['last_monster']}，你倒下了，爬塔结束。"
     elif outcome == "TOWER_CLEARED":
-        result = f"第10轮击退{facts['last_monster']}，你成功通关。"
+        result = f"第10轮通过{facts['last_monster']}的遭遇，你成功通关。"
     elif outcome == "ROUND_RESOLVED":
         result = f"第{facts['last_round']}轮对{facts['last_monster']}选择了{facts['last_choice']}。"
     else:
         result = ""
     if facts["status"] == "active":
-        encounter = f"第{facts['next_round']}轮，{facts['next_monster']}出现了。"
+        encounter = f"风之试炼塔第{facts['next_round']}轮，{facts['next_monster']}出现了。"
+        if facts.get("next_bonus_points", 0):
+            encounter += f"稀有惊喜！完成本轮攻击或防御可获得{facts['next_bonus_points']}分。"
         options = (
             ChoiceText("strike", "攻击", "向怪物发起攻击。"),
             ChoiceText("guard", "防御", "稳住阵脚，观察怪物。"),
@@ -119,7 +124,10 @@ class DeepSeekNarrator:
 
     def __call__(self, facts: dict) -> object:
         prompt = (
-            "你是文字游戏叙事者。只依据用户消息中的已结算事实写画面，不改变怪物、轮次、分数、结果。"
+            "你是原神主题同人文字游戏叙事者，场景在提瓦特·蒙德附近的风之试炼塔。"
+            "塔与许可任务是项目原创副本，不冒充官方剧情；可以写风、元素与冒险的画面。"
+            "只依据用户消息中的已结算事实写画面，不改变怪物、轮次、分数、结果。"
+            "大伟丘为本项目非致死稀有遭遇，奖励以last_points_awarded为准，不能自定分数或掉落。"
             "只输出 JSON 对象，恰好含 result_narration、encounter_narration、options。"
             "options 中只为 allowed_choices 的每个 choice_id 写 title 和 description，不能增删。"
             "终态 encounter_narration 为空且 options 为空；开场 result_narration 可为空。"
@@ -162,7 +170,16 @@ def narrate_facts(facts: dict, model=None) -> BattleScene:
     """API在业务事务提交后调用；事实从已提交回执读取，不能由玩家指定。"""
     if model is not None:
         try:
-            return _validated_scene(model(facts), facts)
+            return _with_score_line(_validated_scene(model(facts), facts), facts)
         except (HTTPError, URLError, TimeoutError, ValueError, KeyError, IndexError, TypeError, OSError):
             pass
-    return template_scene(facts)
+    return _with_score_line(template_scene(facts), facts)
+
+
+def _with_score_line(scene, facts):
+    # 奖励行取已提交的回执事实，不让模型自由文案代替规则计分。
+    if facts.get("last_round") is None or "last_points_awarded" not in facts:
+        return scene  # 旧回执不猜测/补发奖励，保持可读取。
+    points = facts["last_points_awarded"]
+    line = f"规则计分：本轮+{points}分，累计{facts['score']}分。"
+    return replace(scene, result_narration=scene.result_narration + "\n" + line)

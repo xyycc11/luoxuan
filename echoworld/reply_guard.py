@@ -30,8 +30,14 @@ def is_fact_question(message: str) -> bool:
                ("许可", "背包", "任务", "进入", "材料", "库存", "herb", "permit", "inventory"))
 
 
-def check_reply(game: GameState, message: str, candidate: str, *, lore=None, memories=None, persona=None) -> CheckedReply:
+def check_reply(game: GameState, message: str, candidate: str, *, lore=None, memories=None, persona=None, public_faq=None) -> CheckedReply:
     """关键词只选择模板，不充当安全判断；非白名单文案一律不放行。"""
+    if public_faq:
+        base = check_reply(game, message, candidate, lore=lore, memories=memories, persona=persona)
+        # 此处只能传调用端刚经SQL回查的有效标准FAQ，绝不传待审原文。
+        extra = "\n\n已审核公共提示（通用参考，当前存档事实优先）：\n" + "\n".join(
+            f"[{row['id']} v{row['version']}] {row['text']}" for row in public_faq)
+        return CheckedReply(base.reply + extra, "public_faq_" + base.policy)
     if persona is not None:
         # 游戏事实/私有偏好/授权资料仍由原有代码分支生成，角色只能增加固定口吻。
         if beginner_question(message) or is_fact_question(message):
