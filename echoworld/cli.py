@@ -2,7 +2,10 @@
 
 import argparse
 
-from .combat import CHOICES, CombatState, advance_round, start_combat
+from .combat import (
+    BLESSED_RULESET, CHOICES, MAX_ROUNDS, TACTICAL_RULESET, CombatState,
+    advance_round, choose_blessing, combat_preview, start_combat,
+)
 from .deepseek_agent import DeepSeekAgentModel
 from .narration import DeepSeekNarrator, narrate
 from .npc_agent import run_npc_turn
@@ -57,14 +60,29 @@ def main() -> None:
     if args.npc == "llm" and npc_model is None:
         print("未设置模型密钥；NPC问答使用固定规则，不会请求模型。")
 
+    def show_tactics(combat_state: CombatState) -> None:
+        preview = combat_preview(combat_state)
+        monster_name = "尚未揭晓" if preview["phase"] == "blessing" else combat_state.current_monster.monster_id
+        print(f"试炼第{combat_state.round_no}/{MAX_ROUNDS}轮，分数={combat_state.score}，"
+              f"状态={combat_state.status}，怪物={monster_name}")
+        if preview["focus"] is not None:
+            print(f"专注：{preview['focus']}/{preview['max_focus']}")
+        else:
+            print("经典存档：本局不使用专注。")
+        print("规则提示：" + preview["hint"])
+        if preview["blessing_name"]:
+            print(f"本局祝福：【{preview['blessing_name']}】{preview['blessing_description']}")
+        for option in preview["options"]:
+            print(f"  {option['choice_id']}（{option['title']}）：{option['description']}")
+
     def show_scene(combat_state: CombatState, result=None) -> None:
         scene = narrate(combat_state, result, model)
         if scene.result_narration:
             print(scene.result_narration)
         if scene.encounter_narration:
             print(scene.encounter_narration)
-        if scene.options:
-            print("选项：" + " / ".join(f"{option.choice_id}（{option.title}）" for option in scene.options))
+        # 操作效果来自权威规则预览，不由模型文案决定。
+        show_tactics(combat_state)
         if args.narration == "llm" and scene.source == "template" and model is not None:
             print("模型叙事不可用，本轮已使用模板；战斗结果不受影响。")
 
@@ -72,7 +90,7 @@ def main() -> None:
     print("输入 ask <问题> 向守卫提问；问答不发许可、不推进任务。")
     print("输入 npc venti / npc varka 切换守卫；当前：" + load_guard_skill(guard_id).display_name)
     if args.scenario == "quest":
-        print(HELP_TEXT + "、tower（取得许可后开塔）")
+        print(HELP_TEXT + "、tower（普通试炼）、tower_blessed（祝福二选一试炼）")
     combat: CombatState | None = None
     while True:
         try:
@@ -108,22 +126,29 @@ def main() -> None:
         if args.scenario == "quest":
             command = message.strip().lower()
             if combat is not None and combat.status == "active":
-                if command in CHOICES:
+                if command.startswith("boon_"):
+                    result = choose_blessing(combat, command, combat.round_no)
+                    print(f"规则结果：{result.code}")
+                    show_scene(combat, result)
+                elif command in CHOICES:
                     result = advance_round(combat, command, combat.round_no)
                     print(f"规则结果：{result.code}，分数={combat.score}")
                     show_scene(combat, result)
                 elif command == "status":
-                    print(f"战斗第{combat.round_no}轮，分数={combat.score}，怪物={combat.current_monster.monster_id}")
+                    show_tactics(combat)
                 else:
-                    print("战斗中只能输入 strike、guard、status 或 exit。")
-            elif command == "tower":
+                    print("按场景输入祝福ID或 strike、guard；status 查看当前规则，exit 退出。")
+            elif command == "status" and combat is not None:
+                show_tactics(combat)
+            elif command in {"tower", "tower_blessed"}:
                 if combat is not None:
                     print("本次爬塔已结束，不能重复开始。")
                 elif not state.has_permit:
                     print("守卫：你还没有通行许可。")
                 else:
-                    combat = start_combat(state, seed=args.seed)
-                    print("爬塔开始。")
+                    mode = BLESSED_RULESET if command == "tower_blessed" else TACTICAL_RULESET
+                    combat = start_combat(state, seed=args.seed, ruleset=mode)
+                    print("爬塔开始。先看当前场景的合法选项；祝福只影响普通怪得分，不免死。")
                     show_scene(combat)
             else:
                 print(handle_quest_command(state, message))

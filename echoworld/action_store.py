@@ -78,7 +78,7 @@ def execute_action(store, player, world, payload, *, seed=2):
             else:
                 before = (asdict(game), asdict(combat) if combat else None)
                 # 正式本机入口随机生成；测试/显式演示可固定。种子不接受玩家参数。
-                combat_seed = randbits(63) if seed is None and payload["action"] == "tower" else seed
+                combat_seed = randbits(63) if seed is None and payload["action"] in {"tower", "tower_blessed"} else seed
                 result, combat = apply_action(game, combat, payload["action"], payload.get("expected_round"),
                                               seed=combat_seed)
                 after = (asdict(game), asdict(combat) if combat else None)
@@ -93,7 +93,7 @@ def execute_action(store, player, world, payload, *, seed=2):
                 result["state"]["version"] = version
                 status = 200
                 if result["scene"]:
-                    turn = TurnResult(result["code"], combat.events[-1]) if combat.events else None
+                    turn = TurnResult(result["code"], combat.events[-1] if combat.events else None)
                     receipt.narration_facts = scene_facts(combat, turn)
             result["request_id"] = request_id
             receipt.response, receipt.http_status = result, status

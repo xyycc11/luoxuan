@@ -98,16 +98,17 @@ class KnowledgeFeedbackRequest(BaseModel):
 
 class ActionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    action: Literal["accept", "claim", "submit", "enter", "tower", "strike", "guard"]
+    action: Literal["accept", "claim", "submit", "enter", "tower", "tower_blessed",
+                    "strike", "guard", "boon_wind", "boon_flame", "boon_knight"]
     expected_round: int | None = Field(default=None, strict=True, ge=1, le=10)
     request_id: str = Field(strict=True, pattern=r"^[a-zA-Z0-9_-]{1,80}$")
     expected_version: int = Field(strict=True, ge=0)
 
     @model_validator(mode="after")
     def round_is_required_only_in_combat(self):
-        battle = self.action in {"strike", "guard"}
+        battle = self.action in {"strike", "guard", "boon_wind", "boon_flame", "boon_knight"}
         if battle != (self.expected_round is not None):
-            raise ValueError("战斗选择必须传expected_round，其他动作不传")
+            raise ValueError("战斗/祝福选择必须传expected_round，其他动作不传")
         return self
 
 

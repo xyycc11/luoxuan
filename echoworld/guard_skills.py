@@ -68,13 +68,13 @@ def list_guards() -> list[dict]:
 
 def beginner_question(message: str) -> bool:
     return any(word in message.lower() for word in
-               ("新手", "怎么", "如何", "下一步", "指引", "攻略", "不会", "爬塔", "战斗", "攻击", "防御", "help", "tutorial"))
+               ("新手", "怎么", "如何", "下一步", "指引", "攻略", "不会", "爬塔", "战斗", "攻击", "防御", "祝福", "符文", "help", "tutorial"))
 
 
 def beginner_hint(game) -> str:
     """仅生成建议，不触发动作；不猜测当前战斗进度/未公开抽怪结果。"""
     if game.has_permit:
-        return "你已有许可。尚未开塔可点“进入爬塔”；开塔后按场景选择攻击或防御，规则决定结果，聊天不能改判或复活。"
+        return "你已有许可。尚未开塔可点“普通试炼”或“开启祝福试炼”进入爬塔；祝福试炼先从随机两种中选一种，仅影响普通怪得分，不免死。之后按场景选择攻击或防御，规则决定结果，聊天不能改判或复活。"
     if game.quest_stage == "not_started":
         return "先点“接受任务”。之后准备1个herb，再点“交付herb”；获得许可后才能进入爬塔。"
     if game.quest_stage == "completed":

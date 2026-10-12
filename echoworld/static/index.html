@@ -10,6 +10,10 @@ button,input,select{font:inherit;border-radius:7px;padding:9px 13px;margin:4px;b
 button{background:#a5d7bf;color:#102118;cursor:pointer}button:disabled{opacity:.45;cursor:wait}
 input{width:min(92%,550px)}pre{white-space:pre-wrap;overflow-wrap:anywhere;color:#c6dcf6}small{color:#a3b7ce}
 input[type=checkbox]{width:auto}textarea{width:95%;font:inherit;padding:8px;box-sizing:border-box}
+.battle-panel{border-left:3px solid #a5d7bf;padding:10px 14px;margin:15px 0;background:#152235;border-radius:8px}
+.battle-panel p{margin:6px 0}.battle-panel progress{width:100%;accent-color:#a5d7bf}
+#battleOptions p{font-size:15px;color:#c6dcf6}button:disabled{cursor:not-allowed}
+.blessing-choice{display:block;width:calc(100% - 8px);text-align:left;background:#d7c4f2;color:#241b34;white-space:normal}
 </style>
 <h1>EchoWorld · 提瓦特风之试炼</h1>
 <p>蒙德主题同人文字游戏 · 温迪与法尔伽守卫 · 风之试炼塔为项目原创副本，非原神官方内容。</p>
@@ -18,14 +22,22 @@ input[type=checkbox]{width:auto}textarea{width:95%;font:inherit;padding:8px;box-
 <section>
 <label>演示玩家 <select id="player"><option value="alice">Alice</option><option value="bob">Bob</option></select></label>
 <button id="refresh">刷新存档</button><button id="recover">查询/恢复未确认请求</button>
-<button id="discard">放弃本地恢复标记</button><pre id="state">读取中…</pre>
+<button id="discard">放弃本地恢复标记</button>
+<details><summary>展开权威存档 · 调试</summary><pre id="state">读取中…</pre></details>
 </section>
 <section>
 <h2>任务与战斗</h2>
-<small>新开塔使用原神怪物名称；大伟丘每轮1%，非致死，完成本轮任一选择+50分。已开塔旧存档保留原怪物池。</small>
+<small>普通试炼练习专注策略；祝福试炼开场随机二选一，让本局形成不同打法。专注初始2、上限3；大伟丘每轮1%，任一选择恰好+50；两种即死怪不受祝福影响。已开塔存档不强制升级。</small>
 <div id="actions"><button data-action="accept">接受任务</button><button data-action="claim">领取herb</button>
 <button data-action="submit">交付herb</button><button data-action="enter">核验许可</button>
-<button data-action="tower">进入爬塔</button><button data-action="strike">攻击</button><button data-action="guard">防御</button></div>
+<button data-action="tower">普通试炼</button><button data-action="tower_blessed">开启祝福试炼</button>
+<button data-action="strike">攻击</button><button data-action="guard">防御</button>
+<div id="blessingChoices" hidden></div></div>
+<div class="battle-panel" aria-live="polite">
+<p id="battleStatus">尚未开始试炼。</p><progress id="battleProgress" value="0" max="10" aria-label="已完成试炼轮数"></progress>
+<p id="battleFocus">先完成许可任务。</p><p id="blessingSummary"></p><p id="battleHint"></p>
+<div id="battleOptions"></div>
+</div>
 <pre id="scene">先接受任务，再交付herb取得许可。</pre>
 <small>每个存档只能开始一次爬塔；刷新页面不会重置存档，战斗选择携带当前轮次。</small>
 </section>
@@ -49,11 +61,65 @@ input[type=checkbox]{width:auto}textarea{width:95%;font:inherit;padding:8px;box-
 </section>
 <script>
 let currentState = null;
+let isBusy = false;
 const el = id => document.getElementById(id);
 const pendingKey = () => 'echoworld:pending:' + el('player').value;
 function remember(kind,body){localStorage.setItem(pendingKey(),JSON.stringify({kind,body}))}
 function forget(){localStorage.removeItem(pendingKey())}
-function busy(on){document.querySelectorAll('button,input,select,textarea').forEach(item=>item.disabled=on)}
+function updateActionButtons(){
+  const state=currentState,combat=state?.combat,pending=Boolean(localStorage.getItem(pendingKey()));
+  const active=combat?.status==='active';
+  const allowed={accept:state?.quest_stage==='not_started'&&!state?.has_permit,
+    claim:state?.quest_stage==='active'&&!state?.has_permit&&!state?.training_herb_claimed,
+    submit:state?.quest_stage==='active'&&!state?.has_permit&&(state?.inventory?.herb||0)>=1,
+    enter:Boolean(state?.has_permit),tower:Boolean(state?.has_permit)&&!combat,
+    tower_blessed:Boolean(state?.has_permit)&&!combat,
+    strike:active&&(combat.options||[]).some(option=>option.choice_id==='strike'),
+    guard:active&&(combat.options||[]).some(option=>option.choice_id==='guard')};
+  for(const option of combat?.options||[])allowed[option.choice_id]=active;
+  document.querySelectorAll('#actions button').forEach(button=>{
+    button.disabled=isBusy||pending||!state||!allowed[button.dataset.action];
+    button.title=pending?'请先查询/恢复未确认请求。':(!allowed[button.dataset.action]?'当前状态不允许这个动作。':'');
+  });
+}
+function busy(on){
+  isBusy=on;
+  document.querySelectorAll('button,input,select,textarea').forEach(item=>item.disabled=on);
+  // 恢复交互不等于恢复所有动作：状态与未确认回执仍决定可点击范围。
+  updateActionButtons();
+}
+function displayBattle(combat){
+  el('battleOptions').replaceChildren();
+  el('blessingChoices').replaceChildren();el('blessingChoices').hidden=true;
+  el('blessingSummary').textContent='';
+  if(!combat){
+    el('battleStatus').textContent='尚未开始试炼 · 共10轮';el('battleProgress').value=0;
+    el('battleFocus').textContent=currentState?.has_permit?'已获许可；开塔后初始专注2/3。':'先完成许可任务。';
+    el('battleHint').textContent='刷新只恢复存档，不会重开试炼。';return;
+  }
+  const active=combat.status==='active',completed=active?combat.round_no-1:combat.round_no;
+  const label={active:'进行中',dead:'遭遇致死怪，试炼结束',cleared:'十轮通关'}[combat.status]||combat.status;
+  const choosing=active&&combat.phase==='blessing';
+  el('battleStatus').textContent=choosing?'选择本局祝福 · 十轮试炼尚未开始'
+    :`${label} · 第${combat.round_no}/10轮 · 分数${combat.score} · ${combat.monster_id}`;
+  el('battleProgress').value=completed;
+  el('battleFocus').textContent=combat.focus===null||combat.focus===undefined
+    ?'经典存档：本局不使用专注。':`专注 ${combat.focus}/${combat.max_focus} · 本轮效果以下方规则提示为准`;
+  el('battleHint').textContent=combat.hint||'';
+  if(combat.blessing_name)el('blessingSummary').textContent=`本局祝福【${combat.blessing_name}】：${combat.blessing_description}`;
+  if(choosing){
+    el('blessingChoices').hidden=false;
+    for(const option of combat.options||[]){
+      const button=document.createElement('button');button.className='blessing-choice';
+      button.dataset.action=option.choice_id;button.textContent=`选择【${option.title}】 · ${option.description}`;
+      el('blessingChoices').append(button);
+    }
+  }
+  for(const option of choosing?[]:(combat.options||[])){
+    const line=document.createElement('p');line.textContent=`${option.title}（${option.choice_id}）：${option.description}`;
+    el('battleOptions').append(line);
+  }
+}
 async function request(suffix,body,method){
   const player=el('player').value;
   const response=await fetch(`/api/v1/worlds/world-${player}/${suffix}`,{
@@ -63,16 +129,18 @@ async function request(suffix,body,method){
   if(!response.ok)throw Error(`HTTP ${response.status}: ${JSON.stringify(data.detail||data.code)}`);
   return data;
 }
-function display(state){currentState=state;el('state').textContent=JSON.stringify(state,null,2)}
+function display(state){currentState=state;el('state').textContent=JSON.stringify(state,null,2);displayBattle(state.combat);updateActionButtons()}
 async function run(job){busy(true);try{await job()}catch(error){el('scene').textContent=error.message}finally{busy(false)}}
 async function refresh(){
   const state=await request('state');display(state);
   if(state.combat){
     el('scene').textContent=state.combat.status==='active'
-      ?`已恢复第${state.combat.round_no}轮：${state.combat.monster_id}；选择攻击或防御。`
+      ?(state.combat.phase==='blessing'?'已恢复开场祝福；候选不重抽，请选择其中一种。'
+        :`已恢复第${state.combat.round_no}轮：${state.combat.monster_id}；选择攻击或防御。`)
       :`本场已结束：${state.combat.status}；分数${state.combat.score}。`;
   }else if(state.has_permit){el('scene').textContent='许可已获得，可以进入爬塔。'}
   else if(state.quest_stage==='active'){el('scene').textContent='许可任务进行中；准备herb并交付。'}
+  else{el('scene').textContent='先接受任务，再领取并交付herb取得许可。'}
 }
 async function showAction(result){
   forget();await refresh();
@@ -82,7 +150,7 @@ async function showAction(result){
     try{scene=await request(`actions/${result.request_id}/narration`,{})}
     catch(error){el('trace').textContent='业务已提交；叙事查询失败，使用已保存模板。'}
     el('scene').textContent+='\n'+scene.result_narration+'\n'+scene.encounter_narration;
-    for(const option of scene.options||[])el('scene').textContent+=`\n${option.title} (${option.choice_id})：${option.description}`;
+    // 当前合法选择只展示在SQL恢复的战斗卡上，避免旧回执重复列出过时选项。
     el('scene').textContent+=`\n叙事来源：${scene.source}`;
   }
 }
@@ -96,11 +164,11 @@ async function showHistory(){
 el('npc').onchange=()=>run(async()=>{await showHistory();await loadKnowledge()});
 el('actions').onclick=event=>{
   const action=event.target.dataset.action;
-  if(!action)return;
+  if(!action||event.target.disabled)return;
   run(async()=>{
     if(localStorage.getItem(pendingKey()))throw Error('有结果未确认的请求，请先点“查询/恢复未确认请求”。');
     const body={action,request_id:crypto.randomUUID(),expected_version:currentState.version};
-    if(action==='strike'||action==='guard'){
+    if(action==='strike'||action==='guard'||action.startsWith('boon_')){
       if(!currentState?.combat||currentState.combat.status!=='active')throw Error('没有进行中的战斗。');
       body.expected_round=currentState.combat.round_no;
     }

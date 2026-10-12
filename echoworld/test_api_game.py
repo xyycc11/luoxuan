@@ -84,14 +84,18 @@ class GameApiTests(unittest.TestCase):
 
     def test_ten_rounds_clear_and_terminal_or_stale_requests_do_not_write(self):
         self.grant()
-        self.assertEqual(self.action("tower").json()["code"], "COMBAT_STARTED")
+        opening = self.action("tower").json()
+        self.assertEqual(opening["code"], "COMBAT_STARTED")
+        self.assertEqual(opening["state"]["combat"]["ruleset"], "tactics_v1")
         self.assertEqual(self.action("strike", expected_round=1).json()["code"], "ROUND_RESOLVED")
         before = self.state()
         self.assertEqual(self.action("strike", expected_round=1).json()["code"], "STALE_ROUND")
         self.assertEqual(before, self.state())
         for number in range(2, 11):
             response = self.action("strike", expected_round=number).json()
-        self.assertEqual((response["code"], response["state"]["combat"]["score"]), ("TOWER_CLEARED", 10))
+        # 固定seed2的无脑攻击策略只拿6分；旧经典+10覆盖在test_combat中。
+        self.assertEqual((response["code"], response["state"]["combat"]["score"]), ("TOWER_CLEARED", 6))
+        self.assertEqual(response["state"]["combat"]["focus"], 0)
         self.assertEqual(self.action("guard", expected_round=10).json()["code"], "COMBAT_FINISHED")
         self.assertEqual(self.action("tower").json()["code"], "COMBAT_ALREADY_STARTED")
 
