@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from random import Random
 
 from .state import GameState
+from .elements import ELEMENTS_RULESET, ElementState, new_state as new_elements, prepare_floor
 from .blessings import BLESSINGS, blessing_effect, offer_blessings
 from .expedition import (EXPEDITION_RULESET, CAMP_ROUNDS, CAMP_CHOICES, CAMP_NAMES,
                          MAX_BLESSING_LEVEL, CampEvent, camp_effect, chapter_info, run_report, guard_comments)
@@ -121,10 +122,34 @@ class CombatState:
     route_events: list[RouteEvent] = field(default_factory=list)
     cards: DeckState | None = None
     card_drafts: list[CardDraftEvent] = field(default_factory=list)
+    elemental: ElementState | None = None
 
     def __post_init__(self):
-        if self.ruleset not in {CLASSIC_RULESET, TACTICAL_RULESET, BLESSED_RULESET, EXPEDITION_RULESET, SPIRE_RULESET, ROUTES_RULESET, CARDS_RULESET}:
+        if self.ruleset not in {CLASSIC_RULESET, TACTICAL_RULESET, BLESSED_RULESET, EXPEDITION_RULESET, SPIRE_RULESET, ROUTES_RULESET, CARDS_RULESET, ELEMENTS_RULESET}:
             raise ValueError("unknown combat ruleset")
+        if self.ruleset == ELEMENTS_RULESET:
+            if not isinstance(self.elemental, ElementState):
+                raise ValueError("element mode requires elemental state")
+            if (type(self.round_no) is not int or not 1 <= self.round_no <= 10
+                    or self.status not in {"active", "dead", "cleared"}
+                    or (self.status == "cleared" and (self.round_no != 10 or self.elemental.enemy_hp != 0))):
+                raise ValueError("invalid elemental progress")
+            if self.elemental.camp_due and self.round_no not in {4, 7, 10}:
+                raise ValueError("invalid elemental camp floor")
+            e = self.elemental
+            if (type(self.score) is not int or self.score != sum(row["points"] for row in e.log)
+                    or any(row["floor"] > self.round_no for row in e.log + e.camps)
+                    or (self.status == "active" and (e.hp == 0 or e.enemy_hp == 0))):
+                raise ValueError("invalid elemental score or lifecycle")
+            if ([row.round_no for row in self.events] != list(range(1, len(self.events)+1))
+                    or len(self.events) != (10 if self.status == "cleared" else self.round_no-1)):
+                raise ValueError("invalid elemental completed floors")
+            expected_camp = (self.status == "active" and self.round_no in {4,7,10}
+                             and not any(row["floor"] == self.round_no for row in e.camps))
+            if e.camp_due != expected_camp:
+                raise ValueError("elemental camp does not match current floor")
+        elif self.elemental is not None:
+            raise ValueError("legacy mode cannot carry elemental state")
         if type(self.focus) is not int or not 0 <= self.focus <= MAX_FOCUS:
             raise ValueError("focus must be an integer between 0 and 3")
         if type(self.combo_ready) is not bool or not isinstance(self.blessing_options, (tuple, list)):
@@ -263,8 +288,12 @@ def start_combat(
         raise ValueError("monsters must have positive integer weights")
     offers = offer_blessings(seed) if uses_blessing(ruleset) else ()
     state = CombatState(game.player_id, game.world_id, seed, tuple(monsters), ruleset=ruleset,
-                        blessing_options=offers, cards=new_deck(seed) if ruleset == CARDS_RULESET else None)
-    state.current_monster = _draw_monster(seed, 1, state.monsters)
+                        blessing_options=offers, cards=new_deck(seed) if ruleset == CARDS_RULESET else None,
+                        elemental=new_elements(seed) if ruleset == ELEMENTS_RULESET else None)
+    if ruleset == ELEMENTS_RULESET:
+        prepare_floor(state)
+    else:
+        state.current_monster = _draw_monster(seed, 1, state.monsters)
     return state
 
 
@@ -418,6 +447,9 @@ def choose_route(state: CombatState, choice_id: str, expected_round: int) -> Tur
 
 def combat_preview(state: CombatState) -> dict:
     """玩家可见的当前规则提示；不暴露seed/未来怪物，不进行结算。"""
+    if state.ruleset == ELEMENTS_RULESET:
+        from .elements import preview
+        return preview(state)
     tactical = uses_focus(state.ruleset)
     blessing = BLESSINGS.get(state.blessing)
     preview = {"ruleset": state.ruleset, "focus": state.focus if tactical else None,
@@ -582,6 +614,8 @@ def advance_round(state: CombatState, choice_id: str, expected_round: int) -> Tu
         return TurnResult("STALE_ROUND")
     if state.cards:
         return TurnResult("CARD_REQUIRED")
+    if state.elemental:
+        return TurnResult("ELEMENT_CARD_REQUIRED")
     if choice_id not in CHOICES:
         return TurnResult("INVALID_CHOICE")
     if uses_blessing(state.ruleset) and state.blessing is None:

@@ -117,7 +117,9 @@ class KnowledgeFeedbackRequest(BaseModel):
 
 class ActionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    action: Literal["accept", "claim", "submit", "enter", "tower", "tower_blessed", "tower_expedition", "tower_spire", "tower_routes", "tower_cards",
+    action: Literal["accept", "claim", "submit", "enter", "tower", "tower_blessed", "tower_expedition", "tower_spire", "tower_routes", "tower_cards", "tower_elements",
+                    "element_pyro", "element_hydro", "element_electro", "element_cryo", "element_dendro", "element_anemo", "element_geo",
+                    "element_end", "element_rest", "element_attune",
                     "strike", "guard", "boon_wind", "boon_flame", "boon_knight",
                     "camp_rest", "camp_forge", "camp_cash",
                     "relic_ember", "relic_mirror", "relic_feather", "relic_lantern", "relic_echo", "relic_dew",
@@ -130,7 +132,7 @@ class ActionRequest(BaseModel):
 
     @model_validator(mode="after")
     def round_is_required_only_in_combat(self):
-        battle = self.action in {"strike", "guard", "boon_wind", "boon_flame", "boon_knight",
+        battle = self.action.startswith("element_") or self.action in {"strike", "guard", "boon_wind", "boon_flame", "boon_knight",
                                 "camp_rest", "camp_forge", "camp_cash",
                                 "relic_ember", "relic_mirror", "relic_feather", "relic_lantern", "relic_echo", "relic_dew",
                                 "route_rest", "route_hunt", "card_jab", "card_heavy", "card_guard", "card_meditate",

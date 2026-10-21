@@ -12,6 +12,7 @@ from .expedition import CampEvent
 from .relics import RelicEvent
 from .routes import RouteEvent
 from .cards import DeckState, CardDraftEvent
+from .elements import ElementState
 from .state import GameState
 
 
@@ -42,6 +43,7 @@ def unpack(row: GameSave) -> tuple[GameState, CombatState | None]:
         payload["route_events"] = [RouteEvent(**event) for event in payload.get("route_events", [])]
         payload["cards"] = DeckState(**payload["cards"]) if payload.get("cards") is not None else None
         payload["card_drafts"] = [CardDraftEvent(**event) for event in payload.get("card_drafts", [])]
+        payload["elemental"] = ElementState(**payload["elemental"]) if payload.get("elemental") is not None else None
         combat = CombatState(**payload)
     return game, combat
 

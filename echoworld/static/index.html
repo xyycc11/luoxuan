@@ -42,7 +42,8 @@
 <div class="quest-actions"><button data-action="accept">接受任务</button><button data-action="claim">领取herb</button><button data-action="submit">交付herb</button><button data-action="enter">核验许可</button></div>
 </details>
 <div class="mode-grid" id="modeChoices">
-<button class="mode-card featured" data-action="tower_cards"><em>新旅程 / BUILD YOUR DECK</em><strong>开启战术牌组试炼 <b aria-hidden="true">↗</b></strong><span>抽3选1 · 专注与遗物联动 · 营地选牌，也可跳过</span></button>
+<button class="mode-card featured" data-action="tower_elements"><em>新旅程 / SEVEN ELEMENTS</em><strong>七元素 · 七曜试炼 <b aria-hidden="true">↗</b></strong><span>七元素连招 · 看预告攻守 · 第十层挑战首领，无随机即死</span></button>
+<button class="mode-card" data-action="tower_cards"><strong>旧版战术牌组试炼 <b aria-hidden="true">→</b></strong><span>保留抽3选1与原即死规则，不改已有存档。</span></button>
 <button class="mode-card" data-action="tower_routes"><strong>分岔构筑试炼 <b aria-hidden="true">→</b></strong><span>章节路线取舍与进攻契约，不使用手牌。</span></button>
 <button class="mode-card" data-action="tower_spire"><strong>遗物构筑试炼 <b aria-hidden="true">→</b></strong><span>保留原遗物模式，不加入章节路线。</span></button>
 <div class="other-modes"><button class="mode-card" data-action="tower_expedition"><strong>章节远征 <b aria-hidden="true">→</b></strong><span>四段章节、三处营地，不使用遗物。</span></button><button class="mode-card" data-action="tower"><strong>普通试炼 <b aria-hidden="true">→</b></strong><span>读架势，管专注，熟悉攻守取舍。</span></button><button class="mode-card" data-action="tower_blessed"><strong>祝福试炼 <b aria-hidden="true">→</b></strong><span>开场二选一，形成自己的打法。</span></button></div>
@@ -52,8 +53,9 @@
 <div class="battle-panel" id="battleCard" aria-live="polite">
 <div class="battle-heading"><p class="eyebrow">ENCOUNTER / 当前战况</p><p id="battleStatus">尚未开始试炼。</p></div>
 <progress id="battleProgress" value="0" max="10" aria-label="已完成试炼轮数"></progress>
-<div class="stats"><div class="stat"><small>当前分数</small><strong id="scoreValue">—</strong></div><div class="stat"><small>可用专注</small><strong id="focusValue">—</strong></div><div class="stat"><small>旅程章节</small><strong id="chapterValue">准备</strong></div></div>
+<div class="stats"><div class="stat"><small>当前分数</small><strong id="scoreValue">—</strong></div><div class="stat"><small id="energyLabel">可用专注</small><strong id="focusValue">—</strong></div><div class="stat"><small>旅程章节</small><strong id="chapterValue">准备</strong></div></div>
 <p id="battleFocus">先完成许可任务。</p><p id="blessingSummary"></p><p id="battleHint"></p>
+<section id="elementPanel" class="element-panel" hidden aria-label="七元素战况"></section>
 <section id="relicPanel" class="relic-panel" hidden aria-label="本局遗物构筑"><div class="route-heading"><strong>本局遗物</strong><small>触发效果已计入下方选项</small></div><div id="relicInventory" class="relic-inventory"></div></section>
 <section id="chapterRoutes" class="chapter-routes" hidden aria-label="章节路线与挑战进度"><div class="route-heading"><strong>章节路线</strong><small>只计本章 · 不改变生存概率</small></div><div id="routeContracts"></div></section>
 <section id="deckPanel" class="deck-panel" hidden aria-label="本局战术牌组"><div class="route-heading"><strong>本局牌组</strong><small id="deckCounts"></small></div><p class="quiet-note">每轮3张手牌，选1张完成遭遇；其余一起弃置。相同手牌合并显示，不能连续打出多张。</p><details><summary>查看完整牌组 · 不含抽牌顺序</summary><div id="deckComposition"></div></details></section>
@@ -65,7 +67,7 @@
 </div>
 </div>
 <div class="run-summary" id="runSummary" hidden></div>
-<details class="rules-note"><summary>试炼规则与风险</summary><p>专注初始2、上限3。大伟丘每轮1%，合法攻击或防御恰好+50；遗迹重机/深渊咏者是本项目指定的即死遭遇。营地、祝福和遗物不提供免死，不改变抽怪或通关概率。</p><p>遗物模式在第4/7/10轮前先休整，再从三件遗物中选一件，最多拥有3件、不重复、不重抽。只有普通怪触发遗物；领取不立即加分。借鉴构筑取舍，不是完整卡牌或血量战斗。</p><p>每个存档只开启一次试炼；旧局不升级，不补发祝福或遗物。纪念印记仅描述本局战绩，不发跨局道具。本机演示令牌不等于正式账号。</p></details>
+<details class="rules-note"><summary>试炼规则与风险</summary><p>新七元素模式：七张独立牌，每回合抽4、能量3，可连续出牌。结束回合才结算持续伤害及敌人反击，余牌弃掉重抽，护盾清零、附着保留。第4/7/10层前选择恢复12生命或永久伤害+1。第十层固定首领90生命/20屏障，反应额外削屏障4；攻击按7/12/20循环，第7回合起逐回合追加2伤；普通8回合、首领12回合内击败，否则撤离。无随机即死，生命耗尽仍会失败。大伟丘仅前九层1%，击败额外+50一次。机制和数值均为原创同人简化，不是原神官方战斗公式。</p><p>旧模式仍使用原规则：专注初始2、上限3；大伟丘合法攻击/防御+50，遗迹重机/深渊咏者即死。祝福、遗物和营地不免死。</p><p>每个存档只开启一次试炼；旧局不升级，不自动重置或补发道具。本机演示令牌不等于正式账号。</p></details>
 <p class="quiet-note">分岔模式：第1/4/7/10轮前选一次章节路线。风息小径回1专注；试锋险径先付1专注，本章成功普通攻击2次额外+6（终章1次+3）。失败、稀有与即死不计进度，未达标不退款；两路怪物与死亡概率相同。</p>
 <p class="quiet-note">牌组模式：6张初始牌，抽3选1，弃牌洗回继续抽。营地后选遗物，再从2张新卡中选1张或跳过；新卡置顶，下手保证抽到。每轮仅出1张；手牌全部不可用时可应急整备。卡牌只影响策略分和专注，不改即死或大伟丘50分；不叠加分岔契约。</p>
 </div>
@@ -124,6 +126,7 @@ function updateActionButtons(){
     tower_spire:Boolean(state?.has_permit)&&!combat,
     tower_routes:Boolean(state?.has_permit)&&!combat,
     tower_cards:Boolean(state?.has_permit)&&!combat,
+    tower_elements:Boolean(state?.has_permit)&&!combat,
     strike:active&&(combat.options||[]).some(option=>option.choice_id==='strike'),
     guard:active&&(combat.options||[]).some(option=>option.choice_id==='guard')};
   for(const option of combat?.options||[])allowed[option.choice_id]=active&&option.enabled!==false;
@@ -143,6 +146,9 @@ function displayBattle(combat){
   el('battleOptions').replaceChildren();
   el('blessingChoices').replaceChildren();el('blessingChoices').hidden=true;
   el('blessingSummary').textContent='';
+  el('energyLabel').textContent=combat?.elemental?'本回合能量':'可用专注';
+  el('elementPanel').hidden=!combat?.elemental;
+  el('elementPanel').replaceChildren();
   el('relicInventory').replaceChildren();
   const hasRelics=['spire_v1','spire_routes_v1','cards_v1'].includes(combat?.ruleset);
   el('cardHand').replaceChildren();el('cardHand').hidden=true;
@@ -204,6 +210,7 @@ function displayBattle(combat){
   }
   if(!el('journal').childNodes.length){const empty=document.createElement('small');empty.textContent='这里仅记录已结算的选择，不提前揭晓未来。';el('journal').append(empty)}
   displayGuardComment(combat);
+  if(combat?.elemental){displayElements(combat);return}
   if(!combat){
     el('battleStatus').textContent='尚未开始试炼 · 共10轮';el('battleProgress').value=0;
     el('battleFocus').textContent=currentState?.has_permit?'已获许可；开塔后初始专注2/3。':'先完成许可任务。';
@@ -269,6 +276,49 @@ function displayBattle(combat){
     if(combat.deck){const deckLine=document.createElement('p');deckLine.textContent=`共出手${combat.report.cards_played}次，最终牌组${combat.report.deck_size}张，跳过选牌${combat.report.drafts_skipped}次；每轮只结算选中的一张牌。`;el('runSummary').append(deckLine)}
     for(const name of combat.report.badges){const badge=document.createElement('span');badge.className='badge';badge.textContent=name;el('runSummary').append(badge)}
     const note=document.createElement('p');note.className='quiet-note';note.textContent='印记仅描述本局战绩，不发放道具或解锁新局。新旅程可使用独立CLI内存演示，网页存档不自动重置。';el('runSummary').append(note);
+  }
+}
+function displayElements(combat){
+  const e=combat.elemental,active=combat.status==='active',panel=el('elementPanel');
+  el('modeTag').textContent='七元素 · 七曜试炼';
+  el('combatActions').hidden=true;
+  el('battleStatus').textContent=`${active?'进行中':combat.status==='cleared'?'首领击败 · 通关':'本局止步'} · 第${combat.round_no}/10层${combat.monster_id?' · '+combat.monster_id:''}`;
+  el('battleProgress').value=combat.report.completed_rounds;
+  el('focusValue').textContent=`${e.energy}/3`;
+  el('battleFocus').textContent=`回合${e.turn}/${e.turn_limit} · 共鸣Lv.${e.power} · 能量${e.energy}/3`;
+  el('battleHint').textContent=combat.hint;
+  const meters=document.createElement('div');meters.className='element-meters';
+  for(const [label,value,max] of [['旅人生命',e.hp,e.max_hp],['敌人生命',e.enemy_hp,e.enemy_max_hp]]){
+    if(label==='敌人生命'&&combat.phase==='camp')continue;
+    const box=document.createElement('div'),name=document.createElement('strong'),bar=document.createElement('progress');
+    name.textContent=`${label} ${value}/${max}`;bar.value=value;bar.max=max;bar.setAttribute('aria-label',label);box.append(name,bar);meters.append(box);
+  }
+  panel.append(meters);
+  const details=document.createElement('p');details.textContent=combat.phase==='camp'
+    ?'出发前选择一次：回复生命，或提高七张牌的基础伤害。'
+    :`旅人护盾 ${e.block} · 敌人屏障 ${e.barrier} · 元素附着【${e.aura}】 · 草原核 ${e.cores} · 持续伤害 ${e.dot} · 下张额外伤害 ${e.next_bonus}`;
+  const intent=document.createElement('p');intent.className='element-intent';intent.textContent=active&&combat.phase==='combat'
+    ?`敌方预告：${e.intent} ${e.incoming}伤 · 削弱${e.weaken} · 当前预计失去${Math.max(0,e.incoming-e.weaken-e.block)}生命`
+    :active?'休整不会消耗战斗回合，敌人尚未揭晓。':'结局已保存，不再出牌。';
+  const last=document.createElement('p');last.className='element-last';last.textContent=e.last;
+  panel.append(details,intent,last);
+  const guide=document.createElement('details'),summary=document.createElement('summary');summary.textContent='七张卡与元素反应速查 · 原创简化规则';guide.append(summary);
+  for(const card of e.cards){const row=document.createElement('p');row.textContent=`${card.title} · 耗${card.cost}能量 · 基础${card.damage}伤 · ${card.description}`;guide.append(row)}
+  for(const text of e.guide){const row=document.createElement('p');row.textContent=text;guide.append(row)}
+  panel.append(guide);
+  el('cardHand').hidden=!active;el('cardHand').replaceChildren();
+  for(const option of combat.options){
+    const button=document.createElement('button');button.className='tactic-card element-card';button.dataset.action=option.choice_id;button.dataset.element=option.element||'neutral';
+    const meta=document.createElement('small');meta.className='card-cost';meta.textContent=option.cost===undefined?'营地取舍':option.choice_id==='element_end'?'敌方行动 / 抽新手牌':`${option.cost} 能量 · 本回合可连打`;
+    const name=document.createElement('strong');name.textContent=option.title;
+    const description=document.createElement('span');description.textContent=option.description;
+    button.append(meta,name,description);el('cardHand').append(button);
+  }
+  if(!active){
+    el('runSummary').hidden=false;
+    const h=document.createElement('h3');h.textContent=combat.status==='cleared'?'七曜终章 · 首领击败':'此程止步 · 保留战斗记录';
+    const p=document.createElement('p');p.textContent=`完成${combat.report.completed_rounds}/10层 · ${combat.score}分 = 有效生命伤害${combat.report.normal_points} + 大伟丘奖励${combat.report.rare_points}；触发反应${combat.report.reactions}次。`;
+    el('runSummary').append(h,p);
   }
 }
 function displayGuardComment(combat){
@@ -373,6 +423,9 @@ async function showAction(result){
   forget();await refresh();
     const titles={QUEST_ACCEPTED:'委托已接受 · 先准备一份herb。',TRAINING_HERB_CLAIMED:'教学herb已领取 · 可以交付。',COMPLETED:'许可已获得 · 选择你的试炼。',ENTER_ALLOWED:'许可核验通过。',COMBAT_STARTED:'旅程开始。',BLESSING_CHOSEN:'符文已选择。',CAMP_CHOSEN:'营地选择已记录。',RELIC_CHOSEN:'遗物已收下 · 下一轮开始产生联动。',ROUTE_CHOSEN:'章节路线已选 · 按本章目标前进。',ROUND_RESOLVED:'这一轮，风记住了你的选择。',PLAYER_DEAD:'本次试炼止步。',TOWER_CLEARED:'十轮远行，抵达塔顶。'};
   titles.CARD_DRAFTED='营地选牌已记录 · 下一手已准备。';
+  titles.ELEMENT_PLAYED='元素牌已结算 · 可以继续搭配，或结束回合。';
+  titles.ELEMENT_TURN_ENDED='敌方行动已结算 · 新手牌已准备。';
+  titles.ELEMENT_CAMP_CHOSEN='营地选择已保存 · 继续试炼。';
   el('scene').textContent=titles[result.code]||`动作未完成：${result.code}\n${result.rule_reply||''}`;
   if(result.scene){
     let scene=result.scene;
@@ -398,7 +451,7 @@ el('actions').onclick=event=>{
   run(async()=>{
     if(localStorage.getItem(pendingKey()))throw Error('有结果未确认的请求，请先点“查询/恢复未确认请求”。');
     const body={action,request_id:crypto.randomUUID(),expected_version:currentState.version};
-    if(action==='strike'||action==='guard'||action.startsWith('boon_')||action.startsWith('camp_')||action.startsWith('relic_')||action.startsWith('route_')||action.startsWith('card_')||action.startsWith('draft_')){
+    if(action==='strike'||action==='guard'||action.startsWith('element_')||action.startsWith('boon_')||action.startsWith('camp_')||action.startsWith('relic_')||action.startsWith('route_')||action.startsWith('card_')||action.startsWith('draft_')){
       if(!currentState?.combat||currentState.combat.status!=='active')throw Error('没有进行中的战斗。');
       body.expected_round=currentState.combat.round_no;
     }

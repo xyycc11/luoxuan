@@ -72,6 +72,7 @@ def scene_facts(state: CombatState, result: TurnResult | None = None) -> dict:
                           "focus_after": route.focus_after} if route else None),
         "relics": preview["relics"],
         "deck": preview["deck"],
+        "elemental": preview.get("elemental"),
         "card_draft_result": ({"title": "跳过选牌" if draft.choice_id == "draft_skip" else CARDS[draft.choice_id.replace("draft_", "card_", 1)].name,
                                "deck_size": len(state.cards.deck)} if draft else None),
         "relic_result": relic_view_for_fact(relic),
@@ -246,6 +247,15 @@ def narrate(state: CombatState, result: TurnResult | None = None, model=None) ->
 
 def narrate_facts(facts: dict, model=None) -> BattleScene:
     """API在业务事务提交后调用；事实从已提交回执读取，不能由玩家指定。"""
+    if facts.get("elemental"):
+        # 新反应战斗的数值只读已提交事实，不把旧攻守叙事套到多次出牌上。
+        e = facts["elemental"]
+        title = ("七曜首领已被击败，试炼通关。" if facts["status"] == "cleared" else
+                 "本次试炼结束：" + e["last"] if facts["status"] == "dead" else e["last"])
+        encounter = (f"第{facts['next_round']}层 · {facts['next_monster'] or '营地'}；生命{e['hp']}/{e['max_hp']}，能量{e['energy']}/3。\n{facts['rule_hint']}"
+                     if facts["status"] == "active" else f"累计{facts['score']}分。")
+        return BattleScene(title, encounter, tuple(ChoiceText(row["choice_id"], row["title"], row["description"])
+                                                  for row in facts["rule_options"]), "template")
     if model is not None:
         try:
             return _with_score_line(_validated_scene(model(deepcopy(facts)), facts), facts)

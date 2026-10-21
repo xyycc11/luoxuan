@@ -11,10 +11,12 @@ from .blessings import BLESSINGS
 from .narration import narrate
 from .rules import accept_permit_quest, claim_training_herb, guard_reply, submit_herb_for_permit
 from .state import GameState
+from .elements import ELEMENTS_RULESET, ACTIONS as ELEMENT_ACTIONS, perform as perform_element
 
 
 SUCCESS = {"QUEST_ACCEPTED", "TRAINING_HERB_CLAIMED", "COMPLETED", "ENTER_ALLOWED",
            "COMBAT_STARTED", "BLESSING_CHOSEN", "CAMP_CHOSEN", "RELIC_CHOSEN", "ROUTE_CHOSEN", "CARD_DRAFTED", "ROUND_RESOLVED", "PLAYER_DEAD", "TOWER_CLEARED"}
+SUCCESS.update({"ELEMENT_PLAYED", "ELEMENT_TURN_ENDED", "ELEMENT_CAMP_CHOSEN"})
 
 
 def public_state(game: GameState, combat: CombatState | None) -> dict:
@@ -41,7 +43,7 @@ def apply_action(game: GameState, combat: CombatState | None, action: str,
         code = submit_herb_for_permit(game)
     elif action == "enter":
         code = "ENTER_ALLOWED" if game.has_permit else "PERMIT_REQUIRED"
-    elif action in {"tower", "tower_blessed", "tower_expedition", "tower_spire", "tower_routes", "tower_cards"}:
+    elif action in {"tower", "tower_blessed", "tower_expedition", "tower_spire", "tower_routes", "tower_cards", "tower_elements"}:
         if combat is not None:
             code = "COMBAT_ALREADY_STARTED"
         elif not game.has_permit:
@@ -49,9 +51,14 @@ def apply_action(game: GameState, combat: CombatState | None, action: str,
         else:
             mode = {"tower": TACTICAL_RULESET, "tower_blessed": BLESSED_RULESET,
                     "tower_expedition": EXPEDITION_RULESET, "tower_spire": SPIRE_RULESET,
-                    "tower_routes": ROUTES_RULESET, "tower_cards": CARDS_RULESET}[action]
+                    "tower_routes": ROUTES_RULESET, "tower_cards": CARDS_RULESET,
+                    "tower_elements": ELEMENTS_RULESET}[action]
             combat = start_combat(game, seed=seed, ruleset=mode)
             code = "COMBAT_STARTED"
+            scene = asdict(narrate(combat))
+    elif action in ELEMENT_ACTIONS:
+        code = "COMBAT_NOT_STARTED" if combat is None else perform_element(combat, action, expected_round)
+        if code in SUCCESS:
             scene = asdict(narrate(combat))
     elif action in BLESSINGS:
         if combat is None:

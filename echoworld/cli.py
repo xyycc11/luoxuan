@@ -1,6 +1,7 @@
 """EchoWorld 守卫许可命令行演示。"""
 
 import argparse
+from .elements import ELEMENTS_RULESET, ACTIONS as ELEMENT_ACTIONS, perform as perform_element
 
 from .combat import (
     BLESSED_RULESET, CHOICES, MAX_ROUNDS, TACTICAL_RULESET, CombatState,
@@ -70,10 +71,14 @@ def main() -> None:
         print(f"试炼第{combat_state.round_no}/{MAX_ROUNDS}轮，分数={combat_state.score}，"
               f"状态={combat_state.status}，怪物={monster_name}")
         if preview["focus"] is not None:
-            print(f"专注：{preview['focus']}/{preview['max_focus']}")
+            resource = "能量" if combat_state.elemental else "专注"
+            print(f"{resource}：{preview['focus']}/{preview['max_focus']}")
         else:
             print("经典存档：本局不使用专注。")
         print("规则提示：" + preview["hint"])
+        if combat_state.elemental:
+            e = preview["elemental"]
+            print(f"生命{e['hp']}/{e['max_hp']}，护盾{e['block']}；敌人{e['enemy_hp']}/{e['enemy_max_hp']}，屏障{e['barrier']}；附着{e['aura']}，草原核{e['cores']}；第{e['turn']}回合，预告{e['intent']} {e['incoming']}伤。")
         print(f"章节：{preview['chapter']['title']} · 守卫提示：{preview['guard_comments'][guard_id]}")
         if preview["blessing_name"]:
             print(f"本局祝福：【{preview['blessing_name']}】Lv.{preview['blessing_level']} · {preview['blessing_description']}")
@@ -107,7 +112,7 @@ def main() -> None:
     print("输入 ask <问题> 向守卫提问；问答不发许可、不推进任务。")
     print("输入 npc venti / npc varka 切换守卫；当前：" + load_guard_skill(guard_id).display_name)
     if args.scenario == "quest":
-        print(HELP_TEXT + "、tower（普通试炼）、tower_blessed（祝福试炼）、tower_expedition（章节/营地远征）、tower_spire（遗物构筑）、tower_routes（分岔构筑）、tower_cards（战术牌组）")
+        print(HELP_TEXT + "、tower_elements（七元素反应/首领）、tower（普通试炼）、tower_blessed（祝福试炼）、tower_expedition（章节/营地远征）、tower_spire（遗物构筑）、tower_routes（分岔构筑）、tower_cards（战术牌组）")
     combat: CombatState | None = None
     while True:
         try:
@@ -143,7 +148,11 @@ def main() -> None:
         if args.scenario == "quest":
             command = message.strip().lower()
             if combat is not None and combat.status == "active":
-                if command.startswith("boon_"):
+                if command in ELEMENT_ACTIONS:
+                    code = perform_element(combat, command, combat.round_no)
+                    print(f"规则结果：{code}，分数={combat.score}")
+                    show_scene(combat)
+                elif command.startswith("boon_"):
                     result = choose_blessing(combat, command, combat.round_no)
                     print(f"规则结果：{result.code}")
                     show_scene(combat, result)
@@ -173,7 +182,7 @@ def main() -> None:
                     print("按当前选项输入boon_*/camp_*/relic_*/route_*/card_*/draft_*，非牌组模式可用strike/guard；status 查看，exit 退出。")
             elif command == "status" and combat is not None:
                 show_tactics(combat)
-            elif command in {"tower", "tower_blessed", "tower_expedition", "tower_spire", "tower_routes", "tower_cards"}:
+            elif command in {"tower", "tower_blessed", "tower_expedition", "tower_spire", "tower_routes", "tower_cards", "tower_elements"}:
                 if combat is not None:
                     print("本次爬塔已结束，不能重复开始。")
                 elif not state.has_permit:
@@ -181,9 +190,9 @@ def main() -> None:
                 else:
                     mode = {"tower": TACTICAL_RULESET, "tower_blessed": BLESSED_RULESET,
                             "tower_expedition": EXPEDITION_RULESET, "tower_spire": SPIRE_RULESET,
-                            "tower_routes": ROUTES_RULESET, "tower_cards": CARDS_RULESET}[command]
+                            "tower_routes": ROUTES_RULESET, "tower_cards": CARDS_RULESET, "tower_elements": ELEMENTS_RULESET}[command]
                     combat = start_combat(state, seed=args.seed, ruleset=mode)
-                    print("爬塔开始。先看当前场景的合法选项；祝福只影响普通怪得分，不免死。")
+                    print("爬塔开始。七元素模式请用element_*出牌/结束回合；其他模式按各自规则预览行动。")
                     show_scene(combat)
             else:
                 print(handle_quest_command(state, message))

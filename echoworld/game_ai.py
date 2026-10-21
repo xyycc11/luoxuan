@@ -109,6 +109,15 @@ def visible_packet(game, combat, version, npc_id, goal, question, kind):
         reasons["goal_recover"] = ("你选择的目标是恢复资源：优先对比各选项的专注变化，再考虑即时得分。"
                                    if preview["focus"] is not None else "经典局不使用专注，不能通过动作恢复专注；请按经典效果选择。")
     role = load_guard_skill(npc_id)
+    if combat.elemental:
+        e = preview["elemental"]
+        evidence = {f"element:{i}": row["text"] for i, row in enumerate(combat.elemental.log)}
+        reasons = {"visible_only": "只看当前附着、草原核、血量、手牌与攻击预告，不读取未来牌序；建议不是最优保证。",
+                   "element_combo": "先挂元素再触发反应；草原核可接火/雷爆发，风扩散返能量，岩结晶/冰冻结用于保命。",
+                   "element_defense": f"当前敌人预告{e['incoming']}伤；护盾{e['block']}、削弱{e['weaken']}。结束回合才反击，持续伤害先结算。",
+                   "element_boss": "第十层首领90生命、20屏障，反应额外削盾4；破盾削弱下次攻击4。不是即死遭遇。"}
+        if phase == "camp":
+            reasons["element_camp"] = "恢复至多12生命或所有牌永久+1基础伤害，二选一；不能同时领取。"
     return {"kind": kind, "version": version, "ruleset": combat.ruleset, "npc_id": npc_id,
             "npc_name": role.display_name, "goal": GOALS[goal], "question": question,
             "status": combat.status, "round_no": combat.round_no, "phase": phase,
@@ -118,6 +127,7 @@ def visible_packet(game, combat, version, npc_id, goal, question, kind):
             "relics": deepcopy(preview["relics"]),
             "routes": deepcopy(preview["routes"]),
             "deck": deepcopy(preview["deck"]),
+            "elemental": deepcopy(preview.get("elemental")),
             "monster_id": combat.current_monster.monster_id if phase == "combat" else None,
             "options": deepcopy(preview["options"]), "report": deepcopy(preview["report"]),
             # 只借用角色表达，不把旧闲聊intent/variant输出契约混入战术JSON任务。
@@ -130,7 +140,17 @@ def default_selection(packet):
     options = [row for row in packet["options"] if row.get("enabled", True)]
     action = None
     if options:
-        if packet["goal"] == GOALS["recover"] and packet["focus"] is not None:
+        if packet.get("elemental"):
+            e = packet["elemental"]
+            if packet["phase"] == "camp":
+                action = "element_rest" if e["hp"] < 32 else "element_attune"
+            else:
+                playable = [row for row in options if row["choice_id"] != "element_end"]
+                # 当前一步启发式；不假称完整连招搜索或未来牌序最优。
+                action = max(playable, key=lambda row: (row.get("damage",0) + row.get("barrier_damage",0)
+                    + min(row.get("block_after",0)-e["block"], max(0,e["incoming"]-e["block"]-e["weaken"]))
+                    + row.get("heal",0), bool(row.get("reaction"))))["choice_id"] if playable else "element_end"
+        elif packet["goal"] == GOALS["recover"] and packet["focus"] is not None:
             action = max(options, key=lambda row: row.get("focus_after", 0))["choice_id"]
         elif packet["phase"] == "camp":
             action = "camp_rest" if packet["focus"] < 2 else "camp_cash" if packet["remaining_rounds"] == 1 else "camp_forge"

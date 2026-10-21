@@ -78,7 +78,7 @@ def execute_action(store, player, world, payload, *, seed=2):
             else:
                 before = (asdict(game), asdict(combat) if combat else None)
                 # 正式本机入口随机生成；测试/显式演示可固定。种子不接受玩家参数。
-                combat_seed = randbits(63) if seed is None and payload["action"] in {"tower", "tower_blessed", "tower_expedition", "tower_spire", "tower_routes", "tower_cards"} else seed
+                combat_seed = randbits(63) if seed is None and payload["action"] in {"tower", "tower_blessed", "tower_expedition", "tower_spire", "tower_routes", "tower_cards", "tower_elements"} else seed
                 result, combat = apply_action(game, combat, payload["action"], payload.get("expected_round"),
                                               seed=combat_seed)
                 after = (asdict(game), asdict(combat) if combat else None)
