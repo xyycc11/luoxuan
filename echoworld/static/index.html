@@ -1,67 +1,113 @@
 <!doctype html>
 <html lang="zh-CN">
+<head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#f2eee3">
 <title>EchoWorld · 提瓦特风之试炼</title>
-<style>
-body{font:16px/1.6 system-ui,sans-serif;background:#101827;color:#e4ecf7;max-width:900px;margin:35px auto;padding:0 20px}
-section{background:#1d2b40;padding:22px;border:1px solid #354862;border-radius:14px;margin:18px 0}
-button,input,select{font:inherit;border-radius:7px;padding:9px 13px;margin:4px;border:1px solid #647891}
-button{background:#a5d7bf;color:#102118;cursor:pointer}button:disabled{opacity:.45;cursor:wait}
-input{width:min(92%,550px)}pre{white-space:pre-wrap;overflow-wrap:anywhere;color:#c6dcf6}small{color:#a3b7ce}
-input[type=checkbox]{width:auto}textarea{width:95%;font:inherit;padding:8px;box-sizing:border-box}
-.battle-panel{border-left:3px solid #a5d7bf;padding:10px 14px;margin:15px 0;background:#152235;border-radius:8px}
-.battle-panel p{margin:6px 0}.battle-panel progress{width:100%;accent-color:#a5d7bf}
-#battleOptions p{font-size:15px;color:#c6dcf6}button:disabled{cursor:not-allowed}
-.blessing-choice{display:block;width:calc(100% - 8px);text-align:left;background:#d7c4f2;color:#241b34;white-space:normal}
-</style>
-<h1>EchoWorld · 提瓦特风之试炼</h1>
-<p>蒙德主题同人文字游戏 · 温迪与法尔伽守卫 · 风之试炼塔为项目原创副本，非原神官方内容。</p>
-<p>规则决定许可和战斗结果，模型只负责对话。任务进度存入本地SQL，重启服务仍可恢复。</p>
-<small>仅本机教学演示 · 固定令牌不是正式账号 · 可选模型叙事，失败用模板 · 聊天推送已校验结果</small>
-<section>
-<label>演示玩家 <select id="player"><option value="alice">Alice</option><option value="bob">Bob</option></select></label>
-<button id="refresh">刷新存档</button><button id="recover">查询/恢复未确认请求</button>
-<button id="discard">放弃本地恢复标记</button>
-<details><summary>展开权威存档 · 调试</summary><pre id="state">读取中…</pre></details>
-</section>
-<section>
-<h2>任务与战斗</h2>
-<small>普通试炼练习专注策略；祝福试炼开场随机二选一，让本局形成不同打法。专注初始2、上限3；大伟丘每轮1%，任一选择恰好+50；两种即死怪不受祝福影响。已开塔存档不强制升级。</small>
-<div id="actions"><button data-action="accept">接受任务</button><button data-action="claim">领取herb</button>
-<button data-action="submit">交付herb</button><button data-action="enter">核验许可</button>
-<button data-action="tower">普通试炼</button><button data-action="tower_blessed">开启祝福试炼</button>
-<button data-action="strike">攻击</button><button data-action="guard">防御</button>
-<div id="blessingChoices" hidden></div></div>
-<div class="battle-panel" aria-live="polite">
-<p id="battleStatus">尚未开始试炼。</p><progress id="battleProgress" value="0" max="10" aria-label="已完成试炼轮数"></progress>
-<p id="battleFocus">先完成许可任务。</p><p id="blessingSummary"></p><p id="battleHint"></p>
-<div id="battleOptions"></div>
+<link rel="stylesheet" href="/assets/adventure-v2.css">
+</head>
+<body>
+<a class="skip-link" href="#adventure">跳到试炼操作</a>
+<header class="topbar">
+<a class="brand" href="#adventure"><span class="brand-star" aria-hidden="true">✧</span><span>EchoWorld<small>风之试炼 · 原创同人冒险</small></span></a>
+<nav aria-label="冒险导航"><a href="#adventure">试炼之旅</a><a href="#aiPanel">守卫顾问</a><a href="#journeyNotes">旅途手记</a></nav>
+<span class="local-indicator"><i aria-hidden="true"></i> 本地存档</span>
+</header>
+<main class="game-layout">
+<aside class="traveler-panel" aria-label="旅人档案">
+<p class="eyebrow">TRAVELER / 旅人档案</p>
+<div class="traveler-seal" aria-hidden="true">✧</div>
+<h2>随风而行</h2><p class="muted">每一次选择，<br>都是旅途的一部分。</p>
+<label class="player-label">演示玩家 <select id="player"><option value="alice">Alice</option><option value="bob">Bob</option></select></label>
+<dl class="save-facts"><div><dt>存档方式</dt><dd>本机独立存档</dd></div><div><dt>试炼轮数</dt><dd>十轮 · 单次旅程</dd></div><div><dt>奖励结算</dt><dd>由游戏规则核验</dd></div></dl>
+<button id="refresh" class="secondary wide">刷新存档</button>
+<details class="save-tools"><summary>存档恢复与调试</summary><div class="save-bar"><button id="recover" class="secondary">查询/恢复未确认请求</button><button id="discard" class="secondary">放弃本地恢复标记</button></div><small>刷新不重置试炼；清除本地标记不会撤销已提交的动作。</small><details><summary>展开权威存档 · 调试</summary><pre id="state">读取中…</pre></details></details>
+<p class="rail-note">这里没有自动代玩。<br>下一步，始终由你决定。</p>
+</aside>
+
+<div class="adventure-column">
+<section id="adventure" class="adventure">
+<div class="scene-banner">
+<img src="/assets/wind-city-v1.png" alt="原创幻想风城：古树、湖泊与远处的风车城" width="1536" height="1024" fetchpriority="high">
+<div class="scene-shade"></div>
+<div class="scene-caption"><p class="eyebrow">MONDSTADT / 风起之地</p><h1>风之试炼塔</h1><p>让风，记住你的选择。</p></div>
+<span class="scene-label">原创场景插画</span>
 </div>
-<pre id="scene">先接受任务，再交付herb取得许可。</pre>
-<small>每个存档只能开始一次爬塔；刷新页面不会重置存档，战斗选择携带当前轮次。</small>
+<div class="adventure-content">
+<div class="section-heading"><div><p class="eyebrow">THE JOURNEY / 本次旅程</p><h2>循着风的方向</h2></div><span class="tag" id="modeTag">旅程准备</span></div>
+<div id="actions">
+<details id="permitPanel" class="permit-panel" open><summary>入塔委托 <span>取得许可后，选择你的试炼</span></summary>
+<div id="questChecklist" class="quest-steps" aria-label="许可任务进度"></div>
+<div class="quest-actions"><button data-action="accept">接受任务</button><button data-action="claim">领取herb</button><button data-action="submit">交付herb</button><button data-action="enter">核验许可</button></div>
+</details>
+<div class="mode-grid" id="modeChoices">
+<button class="mode-card featured" data-action="tower_cards"><em>新旅程 / BUILD YOUR DECK</em><strong>开启战术牌组试炼 <b aria-hidden="true">↗</b></strong><span>抽3选1 · 专注与遗物联动 · 营地选牌，也可跳过</span></button>
+<button class="mode-card" data-action="tower_routes"><strong>分岔构筑试炼 <b aria-hidden="true">→</b></strong><span>章节路线取舍与进攻契约，不使用手牌。</span></button>
+<button class="mode-card" data-action="tower_spire"><strong>遗物构筑试炼 <b aria-hidden="true">→</b></strong><span>保留原遗物模式，不加入章节路线。</span></button>
+<div class="other-modes"><button class="mode-card" data-action="tower_expedition"><strong>章节远征 <b aria-hidden="true">→</b></strong><span>四段章节、三处营地，不使用遗物。</span></button><button class="mode-card" data-action="tower"><strong>普通试炼 <b aria-hidden="true">→</b></strong><span>读架势，管专注，熟悉攻守取舍。</span></button><button class="mode-card" data-action="tower_blessed"><strong>祝福试炼 <b aria-hidden="true">→</b></strong><span>开场二选一，形成自己的打法。</span></button></div>
+</div>
+<div class="route-heading"><span>试炼路线</span><small>只记录已发生的旅程</small></div>
+<div id="route" class="route" aria-label="十轮试炼路线"></div>
+<div class="battle-panel" id="battleCard" aria-live="polite">
+<div class="battle-heading"><p class="eyebrow">ENCOUNTER / 当前战况</p><p id="battleStatus">尚未开始试炼。</p></div>
+<progress id="battleProgress" value="0" max="10" aria-label="已完成试炼轮数"></progress>
+<div class="stats"><div class="stat"><small>当前分数</small><strong id="scoreValue">—</strong></div><div class="stat"><small>可用专注</small><strong id="focusValue">—</strong></div><div class="stat"><small>旅程章节</small><strong id="chapterValue">准备</strong></div></div>
+<p id="battleFocus">先完成许可任务。</p><p id="blessingSummary"></p><p id="battleHint"></p>
+<section id="relicPanel" class="relic-panel" hidden aria-label="本局遗物构筑"><div class="route-heading"><strong>本局遗物</strong><small>触发效果已计入下方选项</small></div><div id="relicInventory" class="relic-inventory"></div></section>
+<section id="chapterRoutes" class="chapter-routes" hidden aria-label="章节路线与挑战进度"><div class="route-heading"><strong>章节路线</strong><small>只计本章 · 不改变生存概率</small></div><div id="routeContracts"></div></section>
+<section id="deckPanel" class="deck-panel" hidden aria-label="本局战术牌组"><div class="route-heading"><strong>本局牌组</strong><small id="deckCounts"></small></div><p class="quiet-note">每轮3张手牌，选1张完成遭遇；其余一起弃置。相同手牌合并显示，不能连续打出多张。</p><details><summary>查看完整牌组 · 不含抽牌顺序</summary><div id="deckComposition"></div></details></section>
+<div id="blessingChoices" hidden></div>
+<div id="cardHand" class="card-hand" hidden aria-label="当前可选手牌"></div>
+<div class="combat-actions" id="combatActions"><button class="action-choice" id="strikeButton" data-action="strike"><strong>攻击</strong><span>按当前规则出手</span></button><button class="action-choice defend" id="guardButton" data-action="guard"><strong>防御</strong><span>稳住阵脚，恢复专注</span></button></div>
+<div id="battleOptions"></div>
+<div class="guard-comment"><small id="guardSpeaker">守卫的战况提示</small><p id="guardComment">先完成许可任务，再决定你的旅程。</p></div>
+</div>
+</div>
+<div class="run-summary" id="runSummary" hidden></div>
+<details class="rules-note"><summary>试炼规则与风险</summary><p>专注初始2、上限3。大伟丘每轮1%，合法攻击或防御恰好+50；遗迹重机/深渊咏者是本项目指定的即死遭遇。营地、祝福和遗物不提供免死，不改变抽怪或通关概率。</p><p>遗物模式在第4/7/10轮前先休整，再从三件遗物中选一件，最多拥有3件、不重复、不重抽。只有普通怪触发遗物；领取不立即加分。借鉴构筑取舍，不是完整卡牌或血量战斗。</p><p>每个存档只开启一次试炼；旧局不升级，不补发祝福或遗物。纪念印记仅描述本局战绩，不发跨局道具。本机演示令牌不等于正式账号。</p></details>
+<p class="quiet-note">分岔模式：第1/4/7/10轮前选一次章节路线。风息小径回1专注；试锋险径先付1专注，本章成功普通攻击2次额外+6（终章1次+3）。失败、稀有与即死不计进度，未达标不退款；两路怪物与死亡概率相同。</p>
+<p class="quiet-note">牌组模式：6张初始牌，抽3选1，弃牌洗回继续抽。营地后选遗物，再从2张新卡中选1张或跳过；新卡置顶，下手保证抽到。每轮仅出1张；手牌全部不可用时可应急整备。卡牌只影响策略分和专注，不改即死或大伟丘50分；不叠加分岔契约。</p>
+</div>
 </section>
-<section>
-<h2>和守卫聊天</h2>
-<label>选择守卫 <select id="npc"><option value="venti">温迪 · 风与诗歌</option><option value="varka">法尔伽 · 骑士与指引</option></select></label>
-<small>共享许可规则，聊天记录分开；第一版为Skill驱动的受控闲聊，不是无限自由聊天。</small>
-<form id="chat"><input id="message" maxlength="2000" placeholder="我有许可，请让我进入" required><button>发送</button></form>
-<pre id="reply">可问“你好”“唱首诗”“我是新手，下一步怎么做”；聊天不发放许可。</pre><pre id="trace"></pre>
+<section id="journeyNotes" class="journey-notes"><div class="section-heading"><h2>旅途手记</h2><span class="eyebrow">ECHOES OF THE WIND</span></div>
+<div class="experience-grid"><div class="story-panel"><h3>石阶上的回声</h3><pre id="scene">先接受任务，再交付herb取得许可。</pre></div><div class="journal-panel"><h3>本局手记 <small>· 最近6条</small></h3><div id="journal"><small>已结算的选择会记录在这里。</small></div></div></div>
 </section>
-<section>
-<h2>帮助守卫积累公共教学知识</h2>
-<small>这是“受控知识演进”，不是自动训练模型。只发布审核通过的标准FAQ；建议原文不公开，个人聊天不会自动提交。请勿填写姓名、联系方式、密钥或其他私密信息。</small>
-<form id="share">
-<label>建议主题 <select id="topic"></select></label><pre id="preview"></pre>
-<textarea id="suggestion" maxlength="600" rows="3" placeholder="例如：希望新手能看到交付herb的前置条件。不要填私人信息。" required></textarea>
-<label><input type="checkbox" id="consent" required>我同意本条建议用于人工审核并发布下方标准FAQ，可随时撤回；建议原文不对其他玩家公开。</label>
-<button>提交待审建议</button><button id="knowledgeRefresh" type="button">刷新待审状态与公共FAQ</button>
-</form>
-<pre id="shareStatus"></pre><div id="myCandidates"></div><div id="publicFaq"></div>
+</div>
+
+<aside class="companion-column" aria-label="守卫陪伴">
+<section id="aiPanel" class="companion-panel">
+<div class="companion-heading"><span class="companion-seal" aria-hidden="true">✧</span><div><p class="eyebrow">YOUR COMPANION</p><h2>旅途中的守卫</h2></div></div>
+<label class="npc-label">选择守卫 <select id="npc"><option value="venti">温迪 · 风与诗歌</option><option value="varka">法尔伽 · 骑士与指引</option></select></label>
+<p class="companion-intro">看清眼前的局面，再迈出下一步。</p>
+<span class="tag" id="aiModeLabel">本地建议</span>
+<h3 class="advisor-title">向守卫问策略 · 战后复盘</h3>
+<div class="ai-controls" id="aiControls">
+<label>本次目标 <select id="aiGoal"><option value="explain">理解选项</option><option value="score">冲分</option><option value="recover">恢复资源</option></select></label>
+<input id="aiQuestion" type="text" maxlength="600" placeholder="现在该休整，还是强化？" aria-label="策略问题">
+<button id="aiAdvice">问当前策略 <span aria-hidden="true">→</span></button><button id="aiReview" class="secondary">生成本局复盘</button><button id="aiRetry" class="secondary" hidden>重查本次请求</button>
+</div>
+<div class="ai-output" id="aiOutput" aria-live="polite"><p>开始试炼后，守卫可以帮你比较选择。本局结束后，可依据真实记录复盘。</p></div>
+<button id="aiConfirm" class="wide" hidden>确认执行这项建议</button>
+<details class="model-settings"><summary>模型设置与使用边界</summary><label><input type="checkbox" id="aiUseModel"> 使用已配置模型（可能计费）</label><p id="aiBudget" class="quiet-note">默认本地规则，不产生模型费用。</p><p class="quiet-note">顾问只读公开战况，不能代玩、改分或免死。建议可能不是最优。手动行动后旧建议失效；确认仅提交一步动作。</p><p class="quiet-note">此勾选只控制策略/复盘，既有NPC聊天和节点叙事有独立服务器开关。自由角色聊天与反事实重放尚未接入。请勿输入私人信息。</p></details>
 </section>
+<section class="chat-panel"><p class="eyebrow">BY THE CAMPFIRE / 炉边片语</p><h2>和守卫聊一聊</h2>
+<small>受控闲聊，聊天不发放许可；两位守卫的记录分开。</small>
+<form id="chat" class="chat-form"><input id="message" maxlength="2000" placeholder="我是新手，下一步怎么做？" aria-label="给守卫的消息" required><button aria-label="发送">发送</button></form>
+<pre id="reply">试试“你好”或“唱首诗”。</pre><details><summary>对话核验信息</summary><pre id="trace"></pre></details>
+</section>
+</aside>
+
+<section class="community-panel"><details><summary>冒险者留言簿 <span>把一条好建议，留给下一位旅人</span></summary>
+<p class="quiet-note">仅发布人工审核通过的标准FAQ，不自动训练。建议原文与个人聊天不公开；请勿填写姓名、联系方式、密钥等私密信息。</p>
+<form id="share"><label>建议主题 <select id="topic"></select></label><pre id="preview"></pre><textarea id="suggestion" maxlength="600" rows="3" placeholder="例如：希望新手能看到交付herb的前置条件。不要填私人信息。" required></textarea><label><input type="checkbox" id="consent" required>我同意本条建议用于人工审核并发布下方标准FAQ，可随时撤回；建议原文不对其他玩家公开。</label><div class="share-buttons"><button>提交待审建议</button><button id="knowledgeRefresh" class="secondary" type="button">刷新待审状态与公共FAQ</button></div></form>
+<pre id="shareStatus"></pre><div id="myCandidates"></div><div id="publicFaq"></div></details></section>
+</main>
+<footer>EchoWorld · 原神世界观同人学习项目，非官方内容。原创副本、机制与AI生成场景插画。<span>下一阵风，仍由你选择方向。</span></footer>
 <script>
 let currentState = null;
 let isBusy = false;
+let aiBusy=false,aiAvailable=false,aiProposal=null,aiLastRequest=null,aiNonce=0;
 const el = id => document.getElementById(id);
 const pendingKey = () => 'echoworld:pending:' + el('player').value;
 function remember(kind,body){localStorage.setItem(pendingKey(),JSON.stringify({kind,body}))}
@@ -74,9 +120,13 @@ function updateActionButtons(){
     submit:state?.quest_stage==='active'&&!state?.has_permit&&(state?.inventory?.herb||0)>=1,
     enter:Boolean(state?.has_permit),tower:Boolean(state?.has_permit)&&!combat,
     tower_blessed:Boolean(state?.has_permit)&&!combat,
+    tower_expedition:Boolean(state?.has_permit)&&!combat,
+    tower_spire:Boolean(state?.has_permit)&&!combat,
+    tower_routes:Boolean(state?.has_permit)&&!combat,
+    tower_cards:Boolean(state?.has_permit)&&!combat,
     strike:active&&(combat.options||[]).some(option=>option.choice_id==='strike'),
     guard:active&&(combat.options||[]).some(option=>option.choice_id==='guard')};
-  for(const option of combat?.options||[])allowed[option.choice_id]=active;
+  for(const option of combat?.options||[])allowed[option.choice_id]=active&&option.enabled!==false;
   document.querySelectorAll('#actions button').forEach(button=>{
     button.disabled=isBusy||pending||!state||!allowed[button.dataset.action];
     button.title=pending?'请先查询/恢复未确认请求。':(!allowed[button.dataset.action]?'当前状态不允许这个动作。':'');
@@ -87,38 +137,151 @@ function busy(on){
   document.querySelectorAll('button,input,select,textarea').forEach(item=>item.disabled=on);
   // 恢复交互不等于恢复所有动作：状态与未确认回执仍决定可点击范围。
   updateActionButtons();
+  updateAIControls();
 }
 function displayBattle(combat){
   el('battleOptions').replaceChildren();
   el('blessingChoices').replaceChildren();el('blessingChoices').hidden=true;
   el('blessingSummary').textContent='';
+  el('relicInventory').replaceChildren();
+  const hasRelics=['spire_v1','spire_routes_v1','cards_v1'].includes(combat?.ruleset);
+  el('cardHand').replaceChildren();el('cardHand').hidden=true;
+  el('deckPanel').hidden=!combat?.deck;
+  el('deckComposition').replaceChildren();
+  if(combat?.deck){
+    const deck=combat.deck;
+    el('deckCounts').textContent=`牌组${deck.size} · 手牌${deck.hand_count} · 抽牌堆${deck.draw_count} · 弃牌堆${deck.discard_count}`;
+    for(const card of deck.composition){const row=document.createElement('p');row.textContent=`${card.title} ×${card.count} · ${card.description}`;el('deckComposition').append(row)}
+  }
+  el('relicPanel').hidden=!hasRelics;
+  el('chapterRoutes').hidden=combat?.ruleset!=='spire_routes_v1';
+  el('routeContracts').replaceChildren();
+  for(const route of combat?.routes||[]){
+    const item=document.createElement('div');item.className='route-contract';
+    const name=document.createElement('strong');name.textContent=`第${route.round_no}-${route.end_round}轮 · ${route.title}`;
+    const detail=document.createElement('span');detail.textContent=route.target?`${route.status} · 成功攻击 ${route.progress}/${route.target} · 达标奖${route.potential_reward}分，已获${route.earned_points}分`:`${route.status} · 专注${route.focus_before}→${route.focus_after}/3`;
+    item.append(name,detail);
+    if(route.target){const progress=document.createElement('progress');progress.max=route.target;progress.value=route.progress;progress.setAttribute('aria-label',`第${route.round_no}轮起章节挑战进度`);item.append(progress)}
+    el('routeContracts').append(item);
+  }
+  if(combat?.ruleset==='spire_routes_v1'&&!combat.routes?.length){el('routeContracts').textContent=combat.phase==='blessing'?'先选开场祝福，再为第1-3轮选择路线。':'尚未选择本章路线：先对比下方的即时补给与挑战条件。';}
+  for(const relic of combat?.relics||[]){
+    const item=document.createElement('div');item.className='relic-item';
+    const name=document.createElement('strong');name.textContent='✧ '+relic.title;
+    const path=document.createElement('small');path.textContent=relic.path;
+    const detail=document.createElement('span');detail.textContent=relic.description;
+    item.append(name,path,detail);el('relicInventory').append(item);
+  }
+  if(hasRelics&&!combat.relics?.length){const note=document.createElement('small');note.textContent='完成第3轮后，在第一处营地休整，再三选一收下第一件遗物。';el('relicInventory').append(note)}
+  el('runSummary').replaceChildren();el('runSummary').hidden=true;
+  el('modeChoices').hidden=Boolean(combat);
+  el('battleCard').dataset.stance=combat?.status==='dead'?'fatal':combat?.stance||'';
+  el('battleCard').dataset.phase=combat?.phase||'';
+  el('scoreValue').textContent=combat?String(combat.score):'—';
+  el('focusValue').textContent=combat?.focus===null||combat?.focus===undefined?'—':`${combat.focus}/${combat.max_focus}`;
+  el('chapterValue').textContent=combat?.chapter?`${combat.chapter.index}/${combat.chapter.total}`:'准备';
+  el('modeTag').textContent=({classic_v1:'经典存档',tactics_v1:'普通试炼',blessings_v1:'祝福试炼',expedition_v1:'章节远征',spire_v1:'遗物构筑',spire_routes_v1:'分岔构筑',cards_v1:'战术牌组'})[combat?.ruleset]||'旅程准备';
+  el('combatActions').hidden=!combat||combat.status!=='active'||combat.phase!=='combat'||Boolean(combat.deck);
+  el('route').replaceChildren();
+  const resolved=combat?.report?.completed_rounds??(combat?combat.round_no-1:0);
+  for(let number=1;number<=10;number++){
+    const node=document.createElement('div');node.className='route-node';node.textContent=String(number);
+    const checkpoint=(combat?.camp_rounds||[]).includes(number);
+    if(number<=resolved)node.classList.add('done');
+    if(combat?.status==='dead'&&number===combat.round_no)node.classList.add('failed');
+    if(combat?.status==='active'&&number===combat.round_no){node.classList.add('current');node.setAttribute('aria-current','step')}
+    if(checkpoint)node.classList.add('camp');
+    const caption=document.createElement('small');caption.textContent=combat?.status==='dead'&&number===combat.round_no?'止步':checkpoint?((combat.visited_camps||[]).includes(number)?'已休整':'营地'):(number===10?'终章':'遭遇');node.append(caption);
+    node.title=`第${number}轮${checkpoint?' · 战斗前的营地选择':''}`;el('route').append(node);
+  }
+  el('journal').replaceChildren();
+  for(const row of combat?.report?.journal||[]){
+    const line=document.createElement('div');line.className='journal-row';
+    const reward=document.createElement('span');reward.className='reward';reward.textContent=row.fatal?'止步':row.kind==='relic'?'收下':row.kind==='route'?'选路':row.kind==='draft'?'选牌':`+${row.points}`;
+    const title=document.createElement('span');title.textContent=`${row.kind==='camp'?'营地':row.kind==='relic'?'构筑':row.kind==='route'?'路线':row.kind==='draft'?'牌组':'第'+row.round_no+'轮'} · ${row.title}`;
+    const detail=document.createElement('small');detail.textContent=`${row.choice}${row.bonus?' · 祝福额外+'+row.bonus:''}${row.relic_bonus?' · 遗物额外+'+row.relic_bonus:''}${row.route_bonus?' · 挑战额外+'+row.route_bonus:''}`;
+    line.append(reward,title,detail);el('journal').append(line);
+  }
+  if(!el('journal').childNodes.length){const empty=document.createElement('small');empty.textContent='这里仅记录已结算的选择，不提前揭晓未来。';el('journal').append(empty)}
+  displayGuardComment(combat);
   if(!combat){
     el('battleStatus').textContent='尚未开始试炼 · 共10轮';el('battleProgress').value=0;
     el('battleFocus').textContent=currentState?.has_permit?'已获许可；开塔后初始专注2/3。':'先完成许可任务。';
     el('battleHint').textContent='刷新只恢复存档，不会重开试炼。';return;
   }
-  const active=combat.status==='active',completed=active?combat.round_no-1:combat.round_no;
+  const active=combat.status==='active',completed=combat.report?.completed_rounds??(active?combat.round_no-1:combat.round_no);
   const label={active:'进行中',dead:'遭遇致死怪，试炼结束',cleared:'十轮通关'}[combat.status]||combat.status;
-  const choosing=active&&combat.phase==='blessing';
-  el('battleStatus').textContent=choosing?'选择本局祝福 · 十轮试炼尚未开始'
-    :`${label} · 第${combat.round_no}/10轮 · 分数${combat.score} · ${combat.monster_id}`;
+  const choosing=active&&['blessing','camp','relic','route','draft'].includes(combat.phase);
+  el('battleStatus').textContent=combat.phase==='blessing'?'选择本局祝福 · 十轮试炼尚未开始'
+    :combat.phase==='camp'?`${combat.chapter.title} · 下一轮出发前的营地`
+    :combat.phase==='relic'?'营地遗物三选一 · 选择与你的打法共鸣的遗物'
+    :combat.phase==='route'?`${combat.chapter.title} · 选择本章节路线`
+    :combat.phase==='draft'?'营地选牌 · 新卡与精简牌组的取舍'
+    :`${label} · 第${combat.round_no}/10轮${combat.monster_id?' · '+combat.monster_id:''}`;
   el('battleProgress').value=completed;
   el('battleFocus').textContent=combat.focus===null||combat.focus===undefined
-    ?'经典存档：本局不使用专注。':`专注 ${combat.focus}/${combat.max_focus} · 本轮效果以下方规则提示为准`;
+    ?'经典存档：本局不使用专注。':`专注 ${combat.focus}/${combat.max_focus} · ${active?'本轮效果以下方规则提示为准':'本局已结束，不再消耗或恢复专注'}`;
   el('battleHint').textContent=combat.hint||'';
-  if(combat.blessing_name)el('blessingSummary').textContent=`本局祝福【${combat.blessing_name}】：${combat.blessing_description}`;
+  if(combat.blessing_name)el('blessingSummary').textContent=`本局祝福【${combat.blessing_name}】Lv.${combat.blessing_level||1}：${combat.blessing_description}`;
   if(choosing){
     el('blessingChoices').hidden=false;
     for(const option of combat.options||[]){
-      const button=document.createElement('button');button.className='blessing-choice';
-      button.dataset.action=option.choice_id;button.textContent=`选择【${option.title}】 · ${option.description}`;
+      const button=document.createElement('button');button.className='blessing-choice'+(combat.phase==='relic'?' relic-choice':'');
+      button.dataset.action=option.choice_id;
+      if(combat.phase==='route')button.classList.add('route-choice');
+      const title=document.createElement('strong');title.textContent=option.title;
+      const detail=document.createElement('span');detail.textContent=option.description;
+      button.append(title,detail);
+      if(option.path){const path=document.createElement('small');path.className='build-path';path.textContent=option.path;button.prepend(path)}
       el('blessingChoices').append(button);
     }
   }
-  for(const option of choosing?[]:(combat.options||[])){
-    const line=document.createElement('p');line.textContent=`${option.title}（${option.choice_id}）：${option.description}`;
-    el('battleOptions').append(line);
+  if(active&&combat.phase==='combat'&&combat.deck){
+    el('cardHand').hidden=false;
+    for(const option of combat.options||[]){
+      const button=document.createElement('button');button.className='tactic-card '+(option.card_kind||'');button.dataset.action=option.choice_id;
+      const meta=document.createElement('small');meta.className='card-cost';meta.textContent=`${option.card_kind==='strike'?'进攻':'蓄力'} · ${option.cost}专注${option.copies>1?' · 手牌×'+option.copies:''}`;
+      const title=document.createElement('strong');title.textContent=option.title;
+      const effect=document.createElement('span');effect.textContent=option.description;
+      button.append(meta,title,effect);el('cardHand').append(button);
+    }
   }
+  for(const option of choosing||combat.deck?[]:(combat.options||[])){
+    const button=option.choice_id==='strike'?el('strikeButton'):el('guardButton');
+    button.querySelector('strong').textContent=option.title;
+    button.querySelector('span').textContent=option.description;
+  }
+  if(!active&&combat.report){
+    el('runSummary').hidden=false;
+    const heading=document.createElement('h3');heading.textContent=combat.status==='cleared'?'风停在塔顶 · 本次远行完成':'风停在这里 · 本次试炼复盘';
+    const points=document.createElement('p');points.textContent=combat.ruleset==='classic_v1'
+      ?`累计${combat.score}分。经典存档保留原记录，不推测缺失的历史计分。`
+      :`累计${combat.score}分 = 普通策略${combat.report.normal_points} + 营地战功${combat.report.camp_points} + 稀有奖励${combat.report.rare_points}。`;
+    const detail=document.createElement('p');detail.textContent=combat.ruleset==='classic_v1'?'经典局不使用架势或祝福统计。':`成功普通攻击${combat.report.successful_attacks}次 · 蓄势防御${combat.report.pressure_guards}次 · 祝福触发${combat.report.blessing_triggers}次。`;
+    el('runSummary').append(heading,points,detail);
+    if(hasRelics){
+      const relicLine=document.createElement('p');relicLine.textContent=`遗物触发${combat.report.relic_triggers}次，贡献${combat.report.relic_points}分（已包含在普通策略分中，不重复相加）。`;el('runSummary').append(relicLine);
+      for(const relic of combat.relics){const line=document.createElement('small');line.className='relic-report';line.textContent=`${relic.title} · 触发${combat.report.relic_counts[relic.choice_id]||0}次`;el('runSummary').append(line)}
+    }
+    if(combat.ruleset==='spire_routes_v1'){
+      const routeLine=document.createElement('p');routeLine.textContent=`完成章节挑战${combat.report.routes_completed}次，贡献${combat.report.route_points}分（已包含在普通策略分中，不重复相加）。`;el('runSummary').append(routeLine);
+    }
+    if(combat.deck){const deckLine=document.createElement('p');deckLine.textContent=`共出手${combat.report.cards_played}次，最终牌组${combat.report.deck_size}张，跳过选牌${combat.report.drafts_skipped}次；每轮只结算选中的一张牌。`;el('runSummary').append(deckLine)}
+    for(const name of combat.report.badges){const badge=document.createElement('span');badge.className='badge';badge.textContent=name;el('runSummary').append(badge)}
+    const note=document.createElement('p');note.className='quiet-note';note.textContent='印记仅描述本局战绩，不发放道具或解锁新局。新旅程可使用独立CLI内存演示，网页存档不自动重置。';el('runSummary').append(note);
+  }
+}
+function displayGuardComment(combat){
+  const npc=el('npc').value;
+  el('guardSpeaker').textContent=(npc==='varka'?'法尔伽':'温迪')+' · 本地战况提示';
+  el('guardComment').textContent=combat?.guard_comments?.[npc]||(currentState?.has_permit?'许可已确认。尚未开塔，可先读各模式说明，再决定是否尝试遗物构筑。':'先接受任务，再准备并交付herb。聊天不会替你领取许可。');
+}
+function displayQuest(state){
+  el('permitPanel').open=!state.has_permit;
+  el('questChecklist').replaceChildren();
+  const rows=[['01 接受委托',state.quest_stage!=='not_started'],['02 准备herb',(state.inventory?.herb||0)>=1||state.has_permit],['03 取得许可',state.has_permit]];
+  const next=rows.findIndex(row=>!row[1]);
+  rows.forEach((row,index)=>{const node=document.createElement('span');node.className='quest-step'+(row[1]?' done':index===next?' current':'');node.textContent=(row[1]?'✓ ':'')+row[0];el('questChecklist').append(node)});
 }
 async function request(suffix,body,method){
   const player=el('player').value;
@@ -129,46 +292,113 @@ async function request(suffix,body,method){
   if(!response.ok)throw Error(`HTTP ${response.status}: ${JSON.stringify(data.detail||data.code)}`);
   return data;
 }
-function display(state){currentState=state;el('state').textContent=JSON.stringify(state,null,2);displayBattle(state.combat);updateActionButtons()}
+function display(state){currentState=state;el('state').textContent=JSON.stringify(state,null,2);displayQuest(state);displayBattle(state.combat);updateActionButtons();updateAIControls()}
 async function run(job){busy(true);try{await job()}catch(error){el('scene').textContent=error.message}finally{busy(false)}}
 async function refresh(){
   const state=await request('state');display(state);
   if(state.combat){
     el('scene').textContent=state.combat.status==='active'
       ?(state.combat.phase==='blessing'?'已恢复开场祝福；候选不重抽，请选择其中一种。'
+        :state.combat.phase==='camp'?'已恢复营地选择；下一轮敌人尚未揭晓。请选择休整、共鸣或战功，不会消耗战斗轮次。'
+        :state.combat.phase==='relic'?'已恢复遗物三选一，候选不会重抽；下一轮敌人尚未揭晓。领取不会立即加分。'
+        :state.combat.phase==='route'?'已恢复章节分岔；选择不会耗战斗轮次。先看专注成本与目标，不改变抽怪风险。'
+        :state.combat.phase==='draft'?'已恢复营地选牌，候选不重抽；选新卡或跳过，之后揭晓下一轮。'
+        :state.combat.deck?`已恢复第${state.combat.round_no}轮原手牌，没有重新抽牌；只能使用当前可用牌。`
         :`已恢复第${state.combat.round_no}轮：${state.combat.monster_id}；选择攻击或防御。`)
-      :`本场已结束：${state.combat.status}；分数${state.combat.score}。`;
+      :`已恢复本局结果：${state.combat.status==='cleared'?'十轮通关':'本次试炼止步'}；总分${state.combat.score}。完整计分与印记见结局面板。`;
   }else if(state.has_permit){el('scene').textContent='许可已获得，可以进入爬塔。'}
   else if(state.quest_stage==='active'){el('scene').textContent='许可任务进行中；准备herb并交付。'}
   else{el('scene').textContent='先接受任务，再领取并交付herb取得许可。'}
+  await loadAIStatus();
 }
+function updateAIControls(){
+  const active=currentState?.combat?.status==='active',finished=currentState?.combat&&!active;
+  if(aiProposal&&(aiProposal.player!==el('player').value||aiProposal.version!==currentState?.version||aiProposal.npc_id!==el('npc').value)){
+    aiProposal=null;el('aiOutput').textContent='局面或角色已经改变，旧建议已失效；请按当前状态重新提问。';
+  }
+  el('aiAdvice').disabled=isBusy||aiBusy||!active;
+  el('aiReview').disabled=isBusy||aiBusy||!finished;
+  el('aiUseModel').disabled=isBusy||aiBusy||!aiAvailable;
+  el('aiGoal').disabled=isBusy||aiBusy;el('aiQuestion').disabled=isBusy||aiBusy;
+  el('aiRetry').hidden=!aiLastRequest||aiLastRequest.body.expected_version!==currentState?.version;el('aiRetry').disabled=isBusy||aiBusy;
+  const valid=aiProposal&&aiProposal.player===el('player').value&&aiProposal.version===currentState?.version
+    &&aiProposal.npc_id===el('npc').value&&active&&(currentState.combat.options||[]).some(row=>row.choice_id===aiProposal.action.choice_id&&row.enabled!==false);
+  el('aiConfirm').hidden=!valid;el('aiConfirm').disabled=!valid||isBusy||Boolean(localStorage.getItem(pendingKey()));
+}
+async function loadAIStatus(){
+  const player=el('player').value;
+  let data;try{data=await request('ai/status')}catch(error){
+    if(player===el('player').value){aiAvailable=false;el('aiUseModel').checked=false;el('aiModeLabel').textContent='模型状态未确认 · 本地建议仍可用';updateAIControls()}
+    return;
+  }
+  if(player!==el('player').value)return;
+  aiAvailable=data.model_available;if(!aiAvailable)el('aiUseModel').checked=false;
+  el('aiModeLabel').textContent=aiAvailable?'模型可用 · 默认本地':'未配置模型 · 本地规则';
+  el('aiBudget').textContent=`模型预算：已预留${data.budget.reserved_calls}/${data.budget.max_reserved_calls}次请求，已开始${data.budget.started_calls}次；顾问${data.budget.advice_queries}/${data.budget.max_advice_queries}次。预算不是金额，失败/未知结果不自动退回预留；不含既有局外NPC聊天。`;
+  updateAIControls();
+}
+function resetAI(){aiNonce++;aiBusy=false;aiProposal=null;aiLastRequest=null;el('aiUseModel').checked=false;el('aiQuestion').value='';el('aiOutput').textContent='已切换上下文，请按当前存档重新提问。';updateAIControls()}
+async function askGameAI(kind,retry=false){
+  const player=el('player').value,nonce=++aiNonce;
+  const body=retry?aiLastRequest.body:{request_id:crypto.randomUUID(),expected_version:currentState.version,
+    npc_id:el('npc').value,goal:el('aiGoal').value,question:el('aiQuestion').value,use_model:el('aiUseModel').checked};
+  if(retry)kind=aiLastRequest.kind;
+  aiLastRequest={kind,body};aiBusy=true;aiProposal=null;updateAIControls();el('aiOutput').textContent='正在整理局面；你仍可手动行动，建议到达时会重新核对状态。';
+  try{
+    const result=await request('ai/'+kind,body);
+    if(nonce!==aiNonce||player!==el('player').value)return;
+    if(body.expected_version!==currentState.version||body.npc_id!==el('npc').value){el('aiOutput').textContent='局面或角色已改变，旧建议未显示；请按新状态重新提问。';return}
+    if(result.status==='running'){el('aiOutput').textContent='相同任务正在生成，未重复调用模型。稍后点“重查本次请求”。';return}
+    const data=result.content;el('aiOutput').replaceChildren();
+    const source=document.createElement('p');source.className='ai-source';source.textContent=`${data.npc_name} · ${data.source==='model'?'模型选择建议/证据':'本地规则建议'}${result.cached?' · 复用缓存':''} · ${result.code}`;el('aiOutput').append(source);
+    if(data.reflection){const flavor=document.createElement('p');flavor.textContent='模型氛围短句（非规则事实）：'+data.reflection;el('aiOutput').append(flavor)}
+    if(data.action){const action=document.createElement('p');action.textContent=`建议【${data.action.title}】：${data.action.description}`;el('aiOutput').append(action);aiProposal={...data,player}}
+    for(const text of data.reasons){const line=document.createElement('p');line.textContent=text;el('aiOutput').append(line)}
+    for(const evidence of data.highlights){const line=document.createElement('p');line.className='evidence';line.textContent=`[${evidence.id}] ${evidence.text}`;el('aiOutput').append(line)}
+    if(data.report){const summary=document.createElement('p');summary.textContent=`权威战绩：总分${data.report.score}；祝福触发${data.report.blessing_triggers}次。`;el('aiOutput').append(summary)}
+    const note=document.createElement('small');note.textContent=data.notice;el('aiOutput').append(note);
+  }catch(error){if(nonce===aiNonce&&player===el('player').value)el('aiOutput').textContent=error.message+'；未执行游戏动作。'}
+  finally{if(nonce===aiNonce){aiBusy=false;await loadAIStatus();updateAIControls()}}
+}
+el('aiAdvice').onclick=()=>askGameAI('advice');el('aiReview').onclick=()=>askGameAI('review');el('aiRetry').onclick=()=>askGameAI('advice',true);
+el('aiConfirm').onclick=()=>run(async()=>{
+  const proposal=aiProposal;
+  if(!proposal||proposal.player!==el('player').value||proposal.npc_id!==el('npc').value||proposal.version!==currentState?.version)throw Error('建议已过期，请重新提问。');
+  if(localStorage.getItem(pendingKey()))throw Error('请先恢复未确认请求。');
+  const body={action:proposal.action.choice_id,request_id:crypto.randomUUID(),expected_version:proposal.version,expected_round:currentState.combat.round_no};
+  aiProposal=null;remember('action',body);const result=await request('action',body);await showAction(result);
+  el('aiOutput').textContent=result.ok?'已通过原动作流程提交这项建议；没有自动执行后续动作。请按当前局面重新提问。':'建议未执行，请核对当前场景和规则提示。';
+});
 async function showAction(result){
   forget();await refresh();
-  el('scene').textContent=`${result.code}\n${result.rule_reply||''}`;
+    const titles={QUEST_ACCEPTED:'委托已接受 · 先准备一份herb。',TRAINING_HERB_CLAIMED:'教学herb已领取 · 可以交付。',COMPLETED:'许可已获得 · 选择你的试炼。',ENTER_ALLOWED:'许可核验通过。',COMBAT_STARTED:'旅程开始。',BLESSING_CHOSEN:'符文已选择。',CAMP_CHOSEN:'营地选择已记录。',RELIC_CHOSEN:'遗物已收下 · 下一轮开始产生联动。',ROUTE_CHOSEN:'章节路线已选 · 按本章目标前进。',ROUND_RESOLVED:'这一轮，风记住了你的选择。',PLAYER_DEAD:'本次试炼止步。',TOWER_CLEARED:'十轮远行，抵达塔顶。'};
+  titles.CARD_DRAFTED='营地选牌已记录 · 下一手已准备。';
+  el('scene').textContent=titles[result.code]||`动作未完成：${result.code}\n${result.rule_reply||''}`;
   if(result.scene){
     let scene=result.scene;
     try{scene=await request(`actions/${result.request_id}/narration`,{})}
     catch(error){el('trace').textContent='业务已提交；叙事查询失败，使用已保存模板。'}
     el('scene').textContent+='\n'+scene.result_narration+'\n'+scene.encounter_narration;
     // 当前合法选择只展示在SQL恢复的战斗卡上，避免旧回执重复列出过时选项。
-    el('scene').textContent+=`\n叙事来源：${scene.source}`;
+    el('scene').textContent+=scene.source==='template'?'\n（本地规则叙事）':'\n（模型叙事，计分由规则核验）';
   }
 }
 el('refresh').onclick=()=>run(refresh);
-el('player').onchange=()=>run(async()=>{el('message').value='';el('suggestion').value='';el('consent').checked=false;el('shareStatus').textContent='';el('myCandidates').replaceChildren();el('publicFaq').replaceChildren();el('reply').textContent='已切换玩家。';el('trace').textContent='';el('scene').textContent='读取该玩家的独立存档。';await refresh();await loadKnowledge()});
+el('player').onchange=()=>run(async()=>{resetAI();el('message').value='';el('suggestion').value='';el('consent').checked=false;el('shareStatus').textContent='';el('myCandidates').replaceChildren();el('publicFaq').replaceChildren();el('reply').textContent='已切换玩家。';el('trace').textContent='';el('scene').textContent='读取该玩家的独立存档。';await refresh();await loadKnowledge()});
 async function showHistory(){
   const data=await request('chat/history?session_id=main&npc_id='+el('npc').value);
   el('reply').textContent=data.turns.length?data.turns.map(turn=>'玩家：'+turn.user+'\n'+turn.assistant).join('\n\n'):'这位守卫还没有与你的聊天记录。';
   el('trace').textContent='当前守卫：'+el('npc').selectedOptions[0].textContent;
 }
-el('npc').onchange=()=>run(async()=>{await showHistory();await loadKnowledge()});
+el('npc').onchange=()=>run(async()=>{resetAI();displayGuardComment(currentState?.combat);await showHistory();await loadKnowledge()});
 el('actions').onclick=event=>{
-  const action=event.target.dataset.action;
-  if(!action||event.target.disabled)return;
+  const button=event.target.closest('button[data-action]');
+  const action=button?.dataset.action;
+  if(!action||button.disabled)return;
   run(async()=>{
     if(localStorage.getItem(pendingKey()))throw Error('有结果未确认的请求，请先点“查询/恢复未确认请求”。');
     const body={action,request_id:crypto.randomUUID(),expected_version:currentState.version};
-    if(action==='strike'||action==='guard'||action.startsWith('boon_')){
+    if(action==='strike'||action==='guard'||action.startsWith('boon_')||action.startsWith('camp_')||action.startsWith('relic_')||action.startsWith('route_')||action.startsWith('card_')||action.startsWith('draft_')){
       if(!currentState?.combat||currentState.combat.status!=='active')throw Error('没有进行中的战斗。');
       body.expected_round=currentState.combat.round_no;
     }
@@ -276,4 +506,5 @@ el('share').onsubmit=event=>{event.preventDefault();run(async()=>{
 })};
 run(async()=>{await refresh();await loadKnowledge()});
 </script>
+</body>
 </html>

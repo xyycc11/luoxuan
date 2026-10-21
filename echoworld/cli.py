@@ -4,8 +4,12 @@ import argparse
 
 from .combat import (
     BLESSED_RULESET, CHOICES, MAX_ROUNDS, TACTICAL_RULESET, CombatState,
-    advance_round, choose_blessing, combat_preview, start_combat,
+    advance_round, choose_blessing, choose_camp, choose_relic, choose_route, choose_card, play_card, combat_preview, start_combat,
 )
+from .relics import SPIRE_RULESET, RELICS
+from .routes import ROUTES_RULESET, ROUTE_CHOICES
+from .cards import CARDS_RULESET, CARDS, DRAFT_CHOICES
+from .expedition import EXPEDITION_RULESET, CAMP_CHOICES
 from .deepseek_agent import DeepSeekAgentModel
 from .narration import DeepSeekNarrator, narrate
 from .npc_agent import run_npc_turn
@@ -62,7 +66,7 @@ def main() -> None:
 
     def show_tactics(combat_state: CombatState) -> None:
         preview = combat_preview(combat_state)
-        monster_name = "尚未揭晓" if preview["phase"] == "blessing" else combat_state.current_monster.monster_id
+        monster_name = "尚未揭晓" if preview["phase"] in {"blessing", "camp", "relic", "route", "draft"} else combat_state.current_monster.monster_id
         print(f"试炼第{combat_state.round_no}/{MAX_ROUNDS}轮，分数={combat_state.score}，"
               f"状态={combat_state.status}，怪物={monster_name}")
         if preview["focus"] is not None:
@@ -70,10 +74,23 @@ def main() -> None:
         else:
             print("经典存档：本局不使用专注。")
         print("规则提示：" + preview["hint"])
+        print(f"章节：{preview['chapter']['title']} · 守卫提示：{preview['guard_comments'][guard_id]}")
         if preview["blessing_name"]:
-            print(f"本局祝福：【{preview['blessing_name']}】{preview['blessing_description']}")
+            print(f"本局祝福：【{preview['blessing_name']}】Lv.{preview['blessing_level']} · {preview['blessing_description']}")
+        if preview["relics"]:
+            print("本局遗物：" + "、".join(row["title"] for row in preview["relics"]))
+        if preview["deck"]:
+            deck = preview["deck"]
+            print(f"牌组{deck['size']}张 / 手牌{deck['hand_count']} / 抽牌堆{deck['draw_count']} / 弃牌堆{deck['discard_count']}；每轮选1张。")
+        for route in preview["routes"]:
+            print(f"路线：{route['title']} · 第{route['round_no']}-{route['end_round']}轮 · {route['status']}"
+                  + (f" · 成功普通攻击{route['progress']}/{route['target']} · 已获{route['earned_points']}分" if route['target'] else ""))
         for option in preview["options"]:
             print(f"  {option['choice_id']}（{option['title']}）：{option['description']}")
+        if combat_state.status != "active":
+            report = preview["report"]
+            print(f"战绩：普通策略{report['normal_points']} / 营地{report['camp_points']} / 稀有{report['rare_points']}；"
+                  f"祝福触发{report['blessing_triggers']}次；纪念印记：{'、'.join(report['badges']) or '本次未获得'}")
 
     def show_scene(combat_state: CombatState, result=None) -> None:
         scene = narrate(combat_state, result, model)
@@ -90,7 +107,7 @@ def main() -> None:
     print("输入 ask <问题> 向守卫提问；问答不发许可、不推进任务。")
     print("输入 npc venti / npc varka 切换守卫；当前：" + load_guard_skill(guard_id).display_name)
     if args.scenario == "quest":
-        print(HELP_TEXT + "、tower（普通试炼）、tower_blessed（祝福二选一试炼）")
+        print(HELP_TEXT + "、tower（普通试炼）、tower_blessed（祝福试炼）、tower_expedition（章节/营地远征）、tower_spire（遗物构筑）、tower_routes（分岔构筑）、tower_cards（战术牌组）")
     combat: CombatState | None = None
     while True:
         try:
@@ -130,6 +147,22 @@ def main() -> None:
                     result = choose_blessing(combat, command, combat.round_no)
                     print(f"规则结果：{result.code}")
                     show_scene(combat, result)
+                elif command in CAMP_CHOICES:
+                    result = choose_camp(combat, command, combat.round_no)
+                    print(f"规则结果：{result.code}")
+                    show_scene(combat, result)
+                elif command in RELICS:
+                    result = choose_relic(combat, command, combat.round_no)
+                    print(f"规则结果：{result.code}")
+                    show_scene(combat, result)
+                elif command in ROUTE_CHOICES:
+                    result = choose_route(combat, command, combat.round_no)
+                    print(f"规则结果：{result.code}")
+                    show_scene(combat, result)
+                elif command in CARDS or command in DRAFT_CHOICES:
+                    result = choose_card(combat, command, combat.round_no) if command in DRAFT_CHOICES else play_card(combat, command, combat.round_no)
+                    print(f"规则结果：{result.code}，分数={combat.score}")
+                    show_scene(combat, result)
                 elif command in CHOICES:
                     result = advance_round(combat, command, combat.round_no)
                     print(f"规则结果：{result.code}，分数={combat.score}")
@@ -137,16 +170,18 @@ def main() -> None:
                 elif command == "status":
                     show_tactics(combat)
                 else:
-                    print("按场景输入祝福ID或 strike、guard；status 查看当前规则，exit 退出。")
+                    print("按当前选项输入boon_*/camp_*/relic_*/route_*/card_*/draft_*，非牌组模式可用strike/guard；status 查看，exit 退出。")
             elif command == "status" and combat is not None:
                 show_tactics(combat)
-            elif command in {"tower", "tower_blessed"}:
+            elif command in {"tower", "tower_blessed", "tower_expedition", "tower_spire", "tower_routes", "tower_cards"}:
                 if combat is not None:
                     print("本次爬塔已结束，不能重复开始。")
                 elif not state.has_permit:
                     print("守卫：你还没有通行许可。")
                 else:
-                    mode = BLESSED_RULESET if command == "tower_blessed" else TACTICAL_RULESET
+                    mode = {"tower": TACTICAL_RULESET, "tower_blessed": BLESSED_RULESET,
+                            "tower_expedition": EXPEDITION_RULESET, "tower_spire": SPIRE_RULESET,
+                            "tower_routes": ROUTES_RULESET, "tower_cards": CARDS_RULESET}[command]
                     combat = start_combat(state, seed=args.seed, ruleset=mode)
                     print("爬塔开始。先看当前场景的合法选项；祝福只影响普通怪得分，不免死。")
                     show_scene(combat)

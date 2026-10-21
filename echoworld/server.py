@@ -18,7 +18,7 @@ def main():
     load_dotenv(args.env_file, override=False)
     if args.offline:
         os.environ.update(ECHOWORLD_NPC_MODE="template", ECHOWORLD_NARRATION_MODE="template",
-                          ECHOWORLD_REDIS_URL="", ECHOWORLD_MILVUS_URI="")
+                          ECHOWORLD_GAME_AI_MODE="template", ECHOWORLD_REDIS_URL="", ECHOWORLD_MILVUS_URI="")
     if args.database:
         path = args.database.resolve()
         path.parent.mkdir(parents=True, exist_ok=True)

@@ -10,6 +10,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Query
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy.orm import Session
 
@@ -27,10 +28,28 @@ from .reply_guard import check_reply, is_fact_question
 from .long_memory import LongMemory, MemoryResult, is_preference_question
 from .action_store import RequestConflict, execute_action, read_receipt
 from .chat_recovery import ChatRecovery
-from .action_store import ActionReceipt, action_scope
+from .action_store import ActionReceipt, action_scope, digest
 from .narration import DeepSeekNarrator, narrate_facts
 from .guard_skills import load_guard_skill, list_guards, beginner_question
 from .shared_knowledge import SharedKnowledge, KnowledgeResult, FAQ
+from .shared_knowledge import rules_fingerprint
+from .ai_generation import GenerationService
+from .game_ai import POLICY_VERSION, policy_fingerprint, visible_packet, default_selection, render_selection, model_task
+
+
+class GameAIRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    request_id: str = Field(strict=True, pattern=r"^[a-zA-Z0-9_-]{1,80}$")
+    expected_version: int = Field(strict=True, ge=0)
+    npc_id: Literal["venti", "varka"] = "varka"
+    goal: Literal["score", "recover", "explain"] = "explain"
+    question: str = Field(default="", strict=True, max_length=600)
+    use_model: bool = Field(default=False, strict=True)
+
+    @field_validator("question")
+    @classmethod
+    def clean_question(cls, value):
+        return value.strip()
 
 
 class ChatRequest(BaseModel):
@@ -98,23 +117,34 @@ class KnowledgeFeedbackRequest(BaseModel):
 
 class ActionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    action: Literal["accept", "claim", "submit", "enter", "tower", "tower_blessed",
-                    "strike", "guard", "boon_wind", "boon_flame", "boon_knight"]
+    action: Literal["accept", "claim", "submit", "enter", "tower", "tower_blessed", "tower_expedition", "tower_spire", "tower_routes", "tower_cards",
+                    "strike", "guard", "boon_wind", "boon_flame", "boon_knight",
+                    "camp_rest", "camp_forge", "camp_cash",
+                    "relic_ember", "relic_mirror", "relic_feather", "relic_lantern", "relic_echo", "relic_dew",
+                    "route_rest", "route_hunt", "card_jab", "card_heavy", "card_guard", "card_meditate",
+                    "card_lunge", "card_counter", "card_riposte", "card_charge", "card_breathe",
+                    "draft_lunge", "draft_counter", "draft_riposte", "draft_charge", "draft_skip"]
     expected_round: int | None = Field(default=None, strict=True, ge=1, le=10)
     request_id: str = Field(strict=True, pattern=r"^[a-zA-Z0-9_-]{1,80}$")
     expected_version: int = Field(strict=True, ge=0)
 
     @model_validator(mode="after")
     def round_is_required_only_in_combat(self):
-        battle = self.action in {"strike", "guard", "boon_wind", "boon_flame", "boon_knight"}
+        battle = self.action in {"strike", "guard", "boon_wind", "boon_flame", "boon_knight",
+                                "camp_rest", "camp_forge", "camp_cash",
+                                "relic_ember", "relic_mirror", "relic_feather", "relic_lantern", "relic_echo", "relic_dew",
+                                "route_rest", "route_hunt", "card_jab", "card_heavy", "card_guard", "card_meditate",
+                                "card_lunge", "card_counter", "card_riposte", "card_charge", "card_breathe",
+                                "draft_lunge", "draft_counter", "draft_riposte", "draft_charge", "draft_skip"}
         if battle != (self.expected_round is not None):
-            raise ValueError("战斗/祝福选择必须传expected_round，其他动作不传")
+            raise ValueError("战斗/祝福/营地/遗物/路线选择必须传expected_round，其他动作不传")
         return self
 
 
 def create_app(model=None, *, database_url: str = "sqlite+pysqlite:///:memory:", cache=None, rag=None,
                memory_embedder=None, memory_index=None, checkpoint_path=None, narrator=None, combat_seed=2,
-               environment_memory=False, shared_embedder=None, shared_index=None) -> FastAPI:
+               environment_memory=False, shared_embedder=None, shared_index=None,
+               game_ai_model=None, ai_timeout=10) -> FastAPI:
     # 工厂默认内存SQL，便于隔离测试；模块app使用文件URL。
     @asynccontextmanager
     async def lifespan(app):
@@ -122,6 +152,7 @@ def create_app(model=None, *, database_url: str = "sqlite+pysqlite:///:memory:",
         try:
             yield
         finally:
+            app.state.game_ai.close()
             app.state.recovery.close()
             app.state.store.close()
             app.state.shared_knowledge.close()
@@ -141,6 +172,7 @@ def create_app(model=None, *, database_url: str = "sqlite+pysqlite:///:memory:",
                 if database_url == DEFAULT_DATABASE_URL:
                     (Path(__file__).parent / "data").mkdir(exist_ok=True)
                 app.state.store = SaveStore(database_url)
+                app.state.game_ai = GenerationService(app.state.store, timeout=ai_timeout)
                 app.state.recovery = ChatRecovery(app.state.store, checkpoint_path)
                 app.state.long_memory = (LongMemory(app.state.store, memory_embedder, memory_index)
                     if memory_embedder is not None or memory_index is not None
@@ -247,6 +279,42 @@ def create_app(model=None, *, database_url: str = "sqlite+pysqlite:///:memory:",
             raise HTTPException(404, "动作回执不存在")
         return {"response": old[0], "http_status": old[1]}
 
+    @router.get("/{world_id}/ai/status")
+    def game_ai_status(game: GameState = Depends(get_game)):
+        return {"model_available": game_ai_model is not None,
+                "budget": app.state.game_ai.status(game.player_id, game.world_id),
+                "notice": "本地建议默认不请求模型；仅显式启用并提问时使用已配置模型。复盘不补发奖励。"}
+
+    def ai_request(req, game, kind):
+        with ensure_store().lock, ensure_store().sessions.begin() as db:
+            save = load_owned(db, game.world_id, game.player_id)
+            latest, combat = unpack(save)
+            version = save.version
+        if version != req.expected_version:
+            raise RequestConflict("AI_STATE_CHANGED")
+        if combat is None:
+            raise HTTPException(409, "AI_COMBAT_NOT_STARTED")
+        if (kind == "advice") != (combat.status == "active"):
+            raise HTTPException(409, "AI_REVIEW_REQUIRES_FINISHED" if kind == "review" else "AI_ADVICE_REQUIRES_ACTIVE")
+        packet = visible_packet(latest, combat, version, req.npc_id, req.goal, req.question, kind)
+        fallback = render_selection(packet, default_selection(packet))
+        identity = [type(game_ai_model).__module__, type(game_ai_model).__qualname__, getattr(game_ai_model, "model", None)]
+        cache_input = [policy_fingerprint(), rules_fingerprint(), identity if req.use_model else "local", packet]
+        compute = lambda on_call, deadline: model_task(packet, game_ai_model, on_call, deadline)
+        result = app.state.game_ai.generate(game.player_id, game.world_id, version, "ai:" + req.request_id,
+            {"kind": kind, **req.model_dump()}, cache_input, fallback, compute,
+            enabled=req.use_model and game_ai_model is not None,
+            slot="advice" if kind == "advice" else "terminal", reserve=2 if kind == "advice" else 1)
+        return {**result, "budget": app.state.game_ai.status(game.player_id, game.world_id)}
+
+    @router.post("/{world_id}/ai/advice")
+    def game_advice(req: GameAIRequest, game: GameState = Depends(get_game)):
+        return ai_request(req, game, "advice")
+
+    @router.post("/{world_id}/ai/review")
+    def game_review(req: GameAIRequest, game: GameState = Depends(get_game)):
+        return ai_request(req, game, "review")
+
     @router.post("/{world_id}/actions/{request_id}/narration")
     def battle_narration(request_id: str, game: GameState = Depends(get_game)):
         key = (action_scope(game.player_id, game.world_id), request_id)
@@ -258,7 +326,26 @@ def create_app(model=None, *, database_url: str = "sqlite+pysqlite:///:memory:",
                 return receipt.narration
             facts = dict(receipt.narration_facts)
         # 慢模型不持有业务事务；失败仅用模板，不再次扣材料/抽怪/结算。
-        scene = asdict(narrate_facts(facts, narrator))
+        version = receipt.response["state"]["version"]
+        milestone = ("opening" if facts["outcome"] == "COMBAT_STARTED" else
+                     "camp:" + str(facts["next_round"]) if facts.get("phase") == "camp" else
+                     "terminal" if facts["status"] != "active" and game_ai_model is None else None)
+        # 普通回合仍立即显示模板；完整AI局仅开场/三营地/复盘最多5个节点。
+        fallback = asdict(narrate_facts(facts))
+        def compute_scene(on_call, deadline):
+            if not on_call():
+                return fallback
+            return asdict(narrate_facts(facts, narrator))
+        with ensure_store().sessions() as db:
+            current_version = db.get(GameSave, game.world_id).version
+        generated = app.state.game_ai.generate(game.player_id, game.world_id, version,
+            "scene:" + digest(request_id), {"action_request": request_id},
+            [policy_fingerprint(), "scene", facts, getattr(narrator, "model", None), rules_fingerprint()],
+            fallback, compute_scene, enabled=narrator is not None and milestone is not None and current_version == version,
+            slot=milestone or "template", reserve=1, check_current=False)
+        scene = generated["content"] if generated["content"] is not None else fallback
+        if generated["status"] == "running":
+            return fallback  # 暂时模板不抢先写进正式叙事回执，等待原生成者提交。
         with ensure_store().lock, ensure_store().sessions.begin() as db:
             receipt = db.get(ActionReceipt, key)
             if receipt.narration is None:
@@ -477,6 +564,9 @@ def create_app(model=None, *, database_url: str = "sqlite+pysqlite:///:memory:",
     def page():
         return FileResponse(Path(__file__).parent / "static" / "index.html")
 
+    # Only bundled presentation assets are public; saves/configuration are not mounted.
+    app.mount("/assets", StaticFiles(directory=Path(__file__).parent / "static" / "assets"), name="assets")
+
     app.include_router(router)
     return app
 
@@ -491,4 +581,6 @@ app = create_app(model=DeepSeekAgentModel.from_environment()
                  environment_memory=True,
                  combat_seed=int(os.environ["ECHOWORLD_DEMO_SEED"]) if os.getenv("ECHOWORLD_DEMO_SEED") else None,
                  narrator=DeepSeekNarrator.from_environment()
-                 if os.getenv("ECHOWORLD_NARRATION_MODE") == "llm" else None)
+                 if os.getenv("ECHOWORLD_NARRATION_MODE") == "llm" else None,
+                 game_ai_model=DeepSeekAgentModel.from_environment()
+                 if os.getenv("ECHOWORLD_GAME_AI_MODE") == "llm" else None)

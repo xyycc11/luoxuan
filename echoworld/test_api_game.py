@@ -45,6 +45,22 @@ class GameApiTests(unittest.TestCase):
         self.assertIn("textContent", response.text)
         self.assertNotIn("innerHTML", response.text)
 
+    def test_bundled_visual_assets_are_served(self):
+        css = self.client.get('/assets/adventure-v2.css')
+        self.assertEqual(css.status_code, 200)
+        self.assertIn('text/css', css.headers['content-type'])
+        self.assertIn('prefers-reduced-motion', css.text)
+        image = self.client.get('/assets/wind-city-v1.png')
+        self.assertEqual(image.status_code, 200)
+        self.assertIn('image/png', image.headers['content-type'])
+        self.assertTrue(image.content.startswith(b'\x89PNG\r\n\x1a\n'))
+
+    def test_asset_mount_does_not_expose_project_files(self):
+        for path in ['/assets/missing.png', '/assets/api.py', '/assets/.env',
+                     '/assets/%2e%2e/api.py', '/assets/%2e%2e/data/echoworld.sqlite3']:
+            with self.subTest(path=path):
+                self.assertEqual(self.client.get(path).status_code, 404)
+
     def test_task_claim_submit_and_repeat(self):
         self.assertEqual(self.action("accept").json()["code"], "QUEST_ACCEPTED")
         self.assertEqual(self.action("claim").json()["code"], "TRAINING_HERB_CLAIMED")

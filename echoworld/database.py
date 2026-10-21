@@ -8,6 +8,10 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from .combat import CombatState, Monster, TurnEvent
+from .expedition import CampEvent
+from .relics import RelicEvent
+from .routes import RouteEvent
+from .cards import DeckState, CardDraftEvent
 from .state import GameState
 
 
@@ -33,6 +37,11 @@ def unpack(row: GameSave) -> tuple[GameState, CombatState | None]:
         payload["monsters"] = tuple(Monster(**item) for item in payload["monsters"])
         payload["current_monster"] = Monster(**payload["current_monster"]) if payload["current_monster"] else None
         payload["events"] = [TurnEvent(**event) for event in payload["events"]]
+        payload["camp_events"] = [CampEvent(**event) for event in payload.get("camp_events", [])]
+        payload["relic_events"] = [RelicEvent(**event) for event in payload.get("relic_events", [])]
+        payload["route_events"] = [RouteEvent(**event) for event in payload.get("route_events", [])]
+        payload["cards"] = DeckState(**payload["cards"]) if payload.get("cards") is not None else None
+        payload["card_drafts"] = [CardDraftEvent(**event) for event in payload.get("card_drafts", [])]
         combat = CombatState(**payload)
     return game, combat
 

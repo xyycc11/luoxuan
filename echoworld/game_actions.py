@@ -1,7 +1,12 @@
 """显式玩家动作；不解析聊天，不加入模型只读工具白名单。"""
 from dataclasses import asdict
 
-from .combat import BLESSED_RULESET, TACTICAL_RULESET, CombatState, advance_round, choose_blessing, combat_preview, start_combat
+from .combat import (BLESSED_RULESET, TACTICAL_RULESET, CombatState, advance_round,
+                     choose_blessing, choose_camp, choose_relic, choose_route, choose_card, play_card, combat_preview, start_combat)
+from .relics import SPIRE_RULESET, RELICS
+from .routes import ROUTES_RULESET, ROUTE_CHOICES
+from .cards import CARDS_RULESET, CARDS, DRAFT_CHOICES
+from .expedition import EXPEDITION_RULESET, CAMP_CHOICES
 from .blessings import BLESSINGS
 from .narration import narrate
 from .rules import accept_permit_quest, claim_training_herb, guard_reply, submit_herb_for_permit
@@ -9,18 +14,19 @@ from .state import GameState
 
 
 SUCCESS = {"QUEST_ACCEPTED", "TRAINING_HERB_CLAIMED", "COMPLETED", "ENTER_ALLOWED",
-           "COMBAT_STARTED", "BLESSING_CHOSEN", "ROUND_RESOLVED", "PLAYER_DEAD", "TOWER_CLEARED"}
+           "COMBAT_STARTED", "BLESSING_CHOSEN", "CAMP_CHOSEN", "RELIC_CHOSEN", "ROUTE_CHOSEN", "CARD_DRAFTED", "ROUND_RESOLVED", "PLAYER_DEAD", "TOWER_CLEARED"}
 
 
 def public_state(game: GameState, combat: CombatState | None) -> dict:
     """公开当前动作效果与危险提示，不泄露seed、完整怪物池或未来遭遇。"""
+    preview = combat_preview(combat) if combat else None
     return {"inventory": dict(game.inventory), "quest_stage": game.quest_stage,
             "has_permit": game.has_permit, "training_herb_claimed": game.training_herb_claimed,
             "combat": None if combat is None else {
                 "round_no": combat.round_no, "status": combat.status, "score": combat.score,
                 "monster_id": (combat.current_monster.monster_id if combat.current_monster else None)
-                    if not (combat.ruleset == BLESSED_RULESET and combat.blessing is None) else None,
-                **combat_preview(combat)}}
+                    if preview["phase"] == "combat" or combat.status != "active" else None,
+                **preview}}
 
 
 def apply_action(game: GameState, combat: CombatState | None, action: str,
@@ -35,13 +41,15 @@ def apply_action(game: GameState, combat: CombatState | None, action: str,
         code = submit_herb_for_permit(game)
     elif action == "enter":
         code = "ENTER_ALLOWED" if game.has_permit else "PERMIT_REQUIRED"
-    elif action in {"tower", "tower_blessed"}:
+    elif action in {"tower", "tower_blessed", "tower_expedition", "tower_spire", "tower_routes", "tower_cards"}:
         if combat is not None:
             code = "COMBAT_ALREADY_STARTED"
         elif not game.has_permit:
             code = "PERMIT_REQUIRED"
         else:
-            mode = BLESSED_RULESET if action == "tower_blessed" else TACTICAL_RULESET
+            mode = {"tower": TACTICAL_RULESET, "tower_blessed": BLESSED_RULESET,
+                    "tower_expedition": EXPEDITION_RULESET, "tower_spire": SPIRE_RULESET,
+                    "tower_routes": ROUTES_RULESET, "tower_cards": CARDS_RULESET}[action]
             combat = start_combat(game, seed=seed, ruleset=mode)
             code = "COMBAT_STARTED"
             scene = asdict(narrate(combat))
@@ -52,6 +60,38 @@ def apply_action(game: GameState, combat: CombatState | None, action: str,
             result = choose_blessing(combat, action, expected_round)
             code = result.code
             if code == "BLESSING_CHOSEN":
+                scene = asdict(narrate(combat, result))
+    elif action in CAMP_CHOICES:
+        if combat is None:
+            code = "COMBAT_NOT_STARTED"
+        else:
+            result = choose_camp(combat, action, expected_round)
+            code = result.code
+            if result.camp_event is not None:
+                scene = asdict(narrate(combat, result))
+    elif action in RELICS:
+        if combat is None:
+            code = "COMBAT_NOT_STARTED"
+        else:
+            result = choose_relic(combat, action, expected_round)
+            code = result.code
+            if result.relic_event is not None:
+                scene = asdict(narrate(combat, result))
+    elif action in ROUTE_CHOICES:
+        if combat is None:
+            code = "COMBAT_NOT_STARTED"
+        else:
+            result = choose_route(combat, action, expected_round)
+            code = result.code
+            if result.route_event is not None:
+                scene = asdict(narrate(combat, result))
+    elif action in DRAFT_CHOICES or action in CARDS:
+        if combat is None:
+            code = "COMBAT_NOT_STARTED"
+        else:
+            result = choose_card(combat, action, expected_round) if action in DRAFT_CHOICES else play_card(combat, action, expected_round)
+            code = result.code
+            if result.card_draft is not None or result.event is not None:
                 scene = asdict(narrate(combat, result))
     elif action in {"strike", "guard"}:
         if combat is None:

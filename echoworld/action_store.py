@@ -78,7 +78,7 @@ def execute_action(store, player, world, payload, *, seed=2):
             else:
                 before = (asdict(game), asdict(combat) if combat else None)
                 # 正式本机入口随机生成；测试/显式演示可固定。种子不接受玩家参数。
-                combat_seed = randbits(63) if seed is None and payload["action"] in {"tower", "tower_blessed"} else seed
+                combat_seed = randbits(63) if seed is None and payload["action"] in {"tower", "tower_blessed", "tower_expedition", "tower_spire", "tower_routes", "tower_cards"} else seed
                 result, combat = apply_action(game, combat, payload["action"], payload.get("expected_round"),
                                               seed=combat_seed)
                 after = (asdict(game), asdict(combat) if combat else None)
@@ -93,7 +93,14 @@ def execute_action(store, player, world, payload, *, seed=2):
                 result["state"]["version"] = version
                 status = 200
                 if result["scene"]:
-                    turn = TurnResult(result["code"], combat.events[-1] if combat.events else None)
+                    # 营地/祝福不是上一轮战斗：回执不得重复描述或计入上一轮奖励。
+                    battle_event = (combat.events[-1] if combat.events and result["code"] in
+                                    {"ROUND_RESOLVED", "PLAYER_DEAD", "TOWER_CLEARED"} else None)
+                    camp_event = combat.camp_events[-1] if result["code"] == "CAMP_CHOSEN" else None
+                    relic_event = combat.relic_events[-1] if result["code"] == "RELIC_CHOSEN" else None
+                    route_event = combat.route_events[-1] if result["code"] == "ROUTE_CHOSEN" else None
+                    card_draft = combat.card_drafts[-1] if result["code"] == "CARD_DRAFTED" else None
+                    turn = TurnResult(result["code"], battle_event, camp_event, relic_event, route_event, card_draft)
                     receipt.narration_facts = scene_facts(combat, turn)
             result["request_id"] = request_id
             receipt.response, receipt.http_status = result, status

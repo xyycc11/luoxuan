@@ -17,3 +17,7 @@ __pycache__/
 *.chat.lock
 .pytest_cache/
 *.log
+*.db
+*.sqlite
+*.sqlite-*
+**/work/

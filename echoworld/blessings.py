@@ -21,7 +21,7 @@ def offer_blessings(seed: int) -> tuple[str, ...]:
     return tuple(Random(f"echoworld:blessings_v1:{seed}").sample(tuple(BLESSINGS), 2))
 
 
-def blessing_effect(blessing_id, stance, choice_id, base_points, combo_ready):
+def blessing_effect(blessing_id, stance, choice_id, base_points, combo_ready, *, bonus_points=2):
     """返回额外分与蓄势标记；稀有/即死遇敌永远不吃祝福加成。"""
     if stance not in {"opening", "pressure"}:
         return 0, combo_ready
@@ -29,9 +29,9 @@ def blessing_effect(blessing_id, stance, choice_id, base_points, combo_ready):
         if choice_id == "guard":
             return 0, True
         if base_points > 0 and combo_ready:
-            return 2, False
+            return bonus_points, False
     if blessing_id == "boon_flame" and stance == "opening" and choice_id == "strike" and base_points > 0:
-        return 2, combo_ready
+        return bonus_points, combo_ready
     if blessing_id == "boon_knight" and stance == "pressure" and choice_id == "guard":
-        return 2, combo_ready
+        return bonus_points, combo_ready
     return 0, combo_ready
