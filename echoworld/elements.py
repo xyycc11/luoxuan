@@ -37,7 +37,15 @@ CARDS = {
 }
 DECK = tuple(CARDS)
 HOLD_ACTIONS = tuple("element_hold_" + key for key in DECK)
-ACTIONS = tuple("element_" + key for key in DECK) + HOLD_ACTIONS + ("element_end", "element_rest", "element_attune")
+PARRY_ACTIONS = tuple("element_parry_" + key for key in DECK)
+DOCTRINES = {
+    "assault": ("烈风破阵", "每回合首次触发元素反应时，额外造成3伤害。"),
+    "bastion": ("磐岩守誓", "每回合首次触发元素反应时，获得3护盾。"),
+    "flow": ("清泉流转", "每回合首次触发元素反应时，返还1能量（上限3）。"),
+}
+DOCTRINE_ACTIONS = tuple("element_doctrine_" + key for key in DOCTRINES)
+CAMP_ACTIONS = ("element_rest", "element_attune") + DOCTRINE_ACTIONS
+ACTIONS = tuple("element_" + key for key in DECK) + HOLD_ACTIONS + PARRY_ACTIONS + ("element_end",) + CAMP_ACTIONS
 ENEMY_STYLES = {
     "丘丘人": ("疾攻", (4, 4, 7), "连续快攻；适合用冻结或结晶稳住节奏。"),
     "木盾丘丘暴徒": ("盾击", (3, 5, 8), "开场6屏障；反应额外削盾4，破盾削弱下一击4。"),
@@ -91,9 +99,12 @@ class ElementState:
     edition: int = 1
     held: str | None = None
     hold_used: bool = False
+    # 第三版才允许营地学习一种流派；触发次数在本回合内保存。
+    doctrine: str | None = None
+    doctrine_used: bool = False
 
     def __post_init__(self):
-        if type(self.edition) is not int or self.edition not in {1, 2}:
+        if type(self.edition) is not int or self.edition not in {1, 2, 3}:
             raise ValueError("invalid elemental edition")
         if type(self.hold_used) is not bool:
             raise ValueError("invalid hold usage")
@@ -101,6 +112,12 @@ class ElementState:
             raise ValueError("held card must exist in hand and consume hold choice")
         if self.edition == 1 and (self.held is not None or self.hold_used):
             raise ValueError("first edition cannot hold cards")
+        if self.doctrine is not None and (type(self.doctrine) is not str or self.doctrine not in DOCTRINES):
+            raise ValueError("invalid elemental doctrine")
+        if type(self.doctrine_used) is not bool or (self.doctrine_used and self.doctrine is None):
+            raise ValueError("invalid doctrine trigger")
+        if self.edition < 3 and (self.doctrine is not None or self.doctrine_used):
+            raise ValueError("old editions cannot learn doctrines")
         bounds = {"hp": (0, MAX_HP), "energy": (0, ENERGY), "block": (0, 30),
                   "power": (0, 3), "turn": (1, 12), "enemy_hp": (0, BOSS_HP),
                   "enemy_max_hp": (12, BOSS_HP), "barrier": (0, BOSS_BARRIER), "cores": (0, 2),
@@ -132,12 +149,17 @@ class ElementState:
         for row in self.camps:
             if (not isinstance(row, dict) or set(row) != {"floor", "action"}
                     or type(row["floor"]) is not int or row["floor"] not in {4,7,10}
-                    or row["action"] not in {"element_rest", "element_attune"}):
+                    or row["action"] not in CAMP_ACTIONS
+                    or (self.edition < 3 and row["action"] in DOCTRINE_ACTIONS)):
                 raise ValueError("invalid elemental camp record")
         if [row["floor"] for row in self.camps] != [4,7,10][:len(self.camps)]:
             raise ValueError("elemental camps must be sequential")
         if self.power != sum(row["action"] == "element_attune" for row in self.camps):
             raise ValueError("elemental power does not match earned upgrades")
+        learned = [row["action"].removeprefix("element_doctrine_") for row in self.camps
+                   if row["action"] in DOCTRINE_ACTIONS]
+        if learned != ([self.doctrine] if self.doctrine is not None else []):
+            raise ValueError("doctrine must match exactly one earned camp choice")
 
 
 def _draw(e, seed, floor):
@@ -177,7 +199,8 @@ def prepare_floor(state):
     e.barrier = barrier
     e.aura, e.cores, e.dot, e.weaken, e.next_bonus = None, 0, 0, 0, 0
     e.held, e.hold_used = None, False
-    if e.edition == 2 and not rare and state.round_no != 10:
+    e.doctrine_used = False
+    if e.edition >= 2 and not rare and state.round_no != 10:
         if name == "木盾丘丘暴徒": e.barrier = 6
         if name == "火史莱姆": e.aura = "pyro"
     e.turn, e.energy, e.block = 1, ENERGY, 0
@@ -195,7 +218,7 @@ def enemy_intent(state, turn=None):
     if state.round_no == 10:
         name, amount = (("试探斩", 7), ("深渊冲击", 12), ("蓄力重击", 20))[(turn - 1) % 3]
         return name, amount + max(0, turn - 6) * 2
-    if e.edition == 2:
+    if e.edition >= 2:
         name, values, _ = ENEMY_STYLES[state.current_monster.monster_id]
         return f"{name} · 第{(turn-1)%3+1}拍", values[(turn-1)%3] + state.round_no // 4
     return ("蓄力重击", 7 + state.round_no // 3) if turn % 3 == 0 else ("普通攻击", 3 + state.round_no // 3)
@@ -250,10 +273,17 @@ def card_effect(e, key):
         e.cores -= 1
         reaction = (reaction + " + " if reaction else "") + ("烈绽放" if key == "pyro" else "超绽放")
         extra += 8
+    doctrine_trigger = ""
+    if e.edition >= 3 and reaction and e.doctrine and not e.doctrine_used:
+        e.doctrine_used = True
+        doctrine_trigger = e.doctrine
+        if e.doctrine == "assault": extra += 3
+        if e.doctrine == "bastion": e.block = min(30, e.block + 3)
+        if e.doctrine == "flow": e.energy = min(ENERGY, e.energy + 1)
     hp_damage, shield_damage = _damage(e, card.damage + e.power + old_bonus + extra, bool(reaction))
     return e, {"reaction": reaction, "damage": hp_damage, "barrier_damage": shield_damage,
                "heal": heal, "block_after": e.block, "energy_after": e.energy,
-               "bonus_damage": extra, "aura_after": e.aura}
+               "bonus_damage": extra, "aura_after": e.aura, "doctrine_trigger": doctrine_trigger}
 
 
 def _record(state, action, **values):
@@ -289,19 +319,39 @@ def perform(state, action, expected_round):
     if state.ruleset != ELEMENTS_RULESET: return "ELEMENTS_NOT_SUPPORTED"
     if type(action) is not str or action not in ACTIONS: return "UNKNOWN_ELEMENT_ACTION"
     e = state.elemental
+    if action in DOCTRINE_ACTIONS and e.edition < 3: return "DOCTRINE_NOT_SUPPORTED"
+    if action in PARRY_ACTIONS and e.edition < 3: return "PARRY_NOT_SUPPORTED"
     if e.camp_due:
-        if action not in {"element_rest", "element_attune"}: return "ELEMENT_CAMP_REQUIRED"
+        if action not in CAMP_ACTIONS: return "ELEMENT_CAMP_REQUIRED"
         if action == "element_attune" and e.power >= 3: return "UPGRADE_MAXED"
+        if action in DOCTRINE_ACTIONS and e.doctrine is not None: return "DOCTRINE_ALREADY_LEARNED"
         before = e.hp
         if action == "element_rest": e.hp = min(MAX_HP, e.hp + 12)
-        else: e.power += 1
+        elif action == "element_attune": e.power += 1
+        else: e.doctrine = action.removeprefix("element_doctrine_")
         e.camps.append({"floor": state.round_no, "action": action})
         e.camp_due = False
-        _record(state, action, points=0, text=f"营地：{'休整恢复' + str(e.hp-before) + '生命' if action == 'element_rest' else '所有牌基础伤害永久+1'}。")
+        reward = ("休整恢复" + str(e.hp-before) + "生命" if action == "element_rest" else
+                  "所有牌基础伤害永久+1" if action == "element_attune" else
+                  "学习【" + DOCTRINES[e.doctrine][0] + "】：" + DOCTRINES[e.doctrine][1])
+        _record(state, action, points=0, text=f"营地：{reward.rstrip('。')}。本次不再领取其他营地奖励。")
         return "ELEMENT_CAMP_CHOSEN"
-    if action in {"element_rest", "element_attune"}: return "ELEMENT_CAMP_NOT_PENDING"
+    if action in CAMP_ACTIONS: return "ELEMENT_CAMP_NOT_PENDING"
+    if action in PARRY_ACTIONS:
+        if e.hold_used: return "TACTIC_ALREADY_USED"
+        key = action.removeprefix("element_parry_")
+        if key not in e.hand: return "ELEMENT_NOT_IN_HAND"
+        if e.block >= 30: return "BLOCK_ALREADY_FULL"
+        before = e.block
+        e.hand.remove(key)
+        e.discard.append(key)
+        e.block = min(30, e.block + 4)
+        e.hold_used = True
+        _record(state, action, points=0, block_added=e.block-before,
+                text=f"弃【{CARDS[key].name}】招架：获得{e.block-before}护盾，不耗能量、不挂元素、不抽牌。已使用本回合机变，不能再留牌或招架。")
+        return "ELEMENT_PARRIED"
     if action in HOLD_ACTIONS:
-        if e.edition != 2: return "HOLD_NOT_SUPPORTED"
+        if e.edition < 2: return "HOLD_NOT_SUPPORTED"
         if e.hold_used: return "HOLD_ALREADY_USED"
         key = action.removeprefix("element_hold_")
         if key not in e.hand: return "ELEMENT_NOT_IN_HAND"
@@ -330,6 +380,7 @@ def perform(state, action, expected_round):
         e.discard.extend(key for key in e.hand if key != e.held)
         e.hand = [e.held] if e.held is not None else []
         e.held, e.hold_used = None, False
+        e.doctrine_used = False
         _draw(e, state.seed, state.round_no)
         return "ELEMENT_TURN_ENDED"
     key = action.removeprefix("element_")
@@ -343,7 +394,8 @@ def perform(state, action, expected_round):
     state.elemental = e = updated
     state.score += effect["damage"]
     _record(state, action, points=effect["damage"], **effect,
-            text=f"{CARDS[key].name}：{effect['reaction'] or '无反应'}，生命伤害{effect['damage']}、削盾{effect['barrier_damage']}，治疗{effect['heal']}，护盾{e.block}。")
+            text=f"{CARDS[key].name}：{effect['reaction'] or '无反应'}，生命伤害{effect['damage']}、削盾{effect['barrier_damage']}，治疗{effect['heal']}，护盾{e.block}。"
+                 + (f"【{DOCTRINES[effect['doctrine_trigger']][0]}】本回合首次反应已触发。" if effect['doctrine_trigger'] else ""))
     return _finish_floor(state) if e.enemy_hp == 0 else "ELEMENT_PLAYED"
 
 
@@ -354,24 +406,35 @@ def preview(state):
     if phase == "camp":
         options = [{"choice_id": "element_rest", "title": "风起地休整", "description": f"恢复至多12生命：{e.hp}→{min(MAX_HP,e.hp+12)}；本次不强化。", "enabled": True},
                    {"choice_id": "element_attune", "title": "七曜共鸣", "description": f"七张卡基础伤害永久+1：Lv.{e.power}→{min(3,e.power+1)}；不恢复生命。", "enabled": e.power < 3}]
+        if e.edition >= 3 and e.doctrine is None:
+            options += [{"choice_id": "element_doctrine_" + key, "title": "流派 · " + title,
+                         "description": text + "本局只能学一种且不能更换；本次放弃回血和永久加伤。",
+                         "enabled": True, "kind": "doctrine"} for key, (title, text) in DOCTRINES.items()]
     elif phase == "combat":
         for key in e.hand:
             card = CARDS[key]
             enabled = card.cost <= e.energy
             after, effect = card_effect(e, key) if enabled else (e, {})
             options.append({"choice_id": "element_" + key, "title": card.name,
-                "description": (f"{effect['reaction'] or '无反应'}：伤害{effect['damage']}、削盾{effect['barrier_damage']}；治疗{effect['heal']}，护盾→{after.block}。 " if enabled else "能量不足。 ") + card.text,
+                "description": (f"{effect['reaction'] or '无反应'}：伤害{effect['damage']}、削盾{effect['barrier_damage']}；治疗{effect['heal']}，护盾→{after.block}。 " if enabled else "能量不足。 ")
+                               + (f"触发【{DOCTRINES[effect['doctrine_trigger']][0]}】，结算后能量{after.energy}。 " if effect.get('doctrine_trigger') else "") + card.text,
                 "enabled": enabled, "cost": card.cost, "element": key, "points_awarded": effect.get("damage", 0),
                 "focus_after": after.energy, **effect})
-        if e.edition == 2 and not e.hold_used:
+        if e.edition >= 2 and not e.hold_used:
             options += [{"choice_id": "element_hold_" + key, "title": "留牌 · " + CARDS[key].name,
                          "description": "本回合限一次，不花能量；这张未使用的牌留到下回合，再抽至4张。若现在打出它，则不再保留。不能带到下一层。",
                          "enabled": True, "kind": "hold", "cost": 0, "element": key,
                          "points_awarded": 0, "focus_after": e.energy} for key in e.hand]
+            if e.edition >= 3:
+                options += [{"choice_id": "element_parry_" + key, "title": "招架 · " + CARDS[key].name,
+                             "description": f"弃掉此牌，获得{min(4,30-e.block)}护盾；不耗能量、不触发元素反应。与留牌共用每回合一次机变，无法再为下一手留牌。",
+                             "enabled": e.block < 30, "kind": "parry", "cost": 0, "element": key,
+                             "points_awarded": 0, "focus_after": e.energy,
+                             "block_after": min(30,e.block+4), "damage": 0} for key in e.hand]
         label, incoming = enemy_intent(state)
         projected = max(0, incoming - e.block - e.weaken)
         options.append({"choice_id": "element_end", "title": "结束回合 · 敌方行动",
-            "description": f"持续伤害{e.dot}先结算；若未击败敌人，{label}{incoming}伤，按当前护盾/削弱预计失去{projected}生命。之后{'保留已选牌、弃其余，抽至4张' if e.edition==2 else '弃掉余牌、抽4'}，能量回3，护盾清零。",
+            "description": f"持续伤害{e.dot}先结算；若未击败敌人，{label}{incoming}伤，按当前护盾/削弱预计失去{projected}生命。之后{'保留已选牌、弃其余，抽至4张' if e.edition>=2 else '弃掉余牌、抽4'}，能量回3，护盾清零。",
             "enabled": True, "points_awarded": 0, "focus_after": 3, "cost": 0})
     for row in options:
         row.setdefault("points_awarded", 0)
@@ -382,19 +445,22 @@ def preview(state):
               "pressure_guards": 0, "blessing_triggers": 0, "completed_rounds": len(state.events),
               "badges": (["七曜征服者"] if state.status == "cleared" else []),
               "reactions": sum(bool(row.get("reaction")) for row in e.log),
+              "parries": sum(row["action"] in PARRY_ACTIONS for row in e.log),
+              "doctrine_triggers": sum(bool(row.get("doctrine_trigger")) for row in e.log),
               "journal": [{"round_no": row["floor"], "kind": "battle", "title": f"第{row['turn']}回合",
                            "choice": row["text"], "points": row.get("points", 0), "fatal": False, "bonus": 0} for row in e.log[-6:]]}
     label, incoming = enemy_intent(state)
     last = e.log[-1]["text"] if e.log else "七元素已就绪：先看敌人附着和攻击预告，再搭配出牌。"
     trait = ("反应额外削盾4；攻击循环7/12/20，第7回合起每回合再+2。" if state.round_no==10 else
              "不攻击；击败额外50分一次。" if state.current_monster.bonus_points else
-             ENEMY_STYLES[state.current_monster.monster_id][2] if e.edition==2 else "初版普通敌人节奏，原规则保持。")
+             ENEMY_STYLES[state.current_monster.monster_id][2] if e.edition>=2 else "初版普通敌人节奏，原规则保持。")
     forecast = [{"turn": turn, "title": enemy_intent(state, turn)[0], "damage": enemy_intent(state, turn)[1]}
-                for turn in range(e.turn, min(e.turn+3, 13 if state.round_no==10 else 9))] if e.edition==2 and phase=="combat" else []
+                for turn in range(e.turn, min(e.turn+3, 13 if state.round_no==10 else 9))] if e.edition>=2 and phase=="combat" else []
     return {"ruleset": ELEMENTS_RULESET, "focus": e.energy, "max_focus": ENERGY,
         "stance": "boss" if state.round_no == 10 else "elements", "phase": phase,
-        "hint": (f"营地二选一：续航或永久伤害；第十层首领有{BOSS_HP}生命/{BOSS_BARRIER}护盾，反应额外削盾4。" if phase == "camp" else
-                 ("每回合可留1张牌到下回合；看敌人特性与后续攻击预告，准备连招或防重击。 " if e.edition==2 else "") +
+        "hint": (f"营地选一次：回血、加伤{'或学习本局唯一流派' if e.edition>=3 and e.doctrine is None else ''}；首领{BOSS_HP}生命/{BOSS_BARRIER}护盾。" if phase == "camp" else
+                 ("机变二选一：留1张牌到下回合，或弃1张获得4盾；共用每回合一次机会。 " if e.edition>=3 else
+                  "每回合可留1张牌到下回合；看敌人特性与后续攻击预告，准备连招或防重击。 " if e.edition==2 else "") +
                  "每回合抽至4、能量3，可连续出不同元素；结束回合才反击。护盾本回合有效，附着跨回合保留。第10层固定首领，无随机即死。"),
         "options": options, "report": report, "chapter": {"index": 4 if state.round_no==10 else (state.round_no-1)//3+1, "total": 4, "title": "七曜终章" if state.round_no==10 else "元素试炼"},
         "blessing_name": None, "blessing_description": None, "blessing_level": None,
@@ -403,6 +469,8 @@ def preview(state):
         "guard_comments": {"venti": last, "varka": "先看预告。冻结/结晶/护盾能少掉血；攒好附着再爆发。" if state.status=="active" else last},
         "elemental": {"hp": e.hp, "max_hp": MAX_HP, "energy": e.energy, "power": e.power,
             "edition": e.edition, "held": CARDS[e.held].name if e.held else None, "hold_used": e.hold_used,
+            "doctrine": ({"key": e.doctrine, "title": DOCTRINES[e.doctrine][0],
+                          "description": DOCTRINES[e.doctrine][1], "used": e.doctrine_used} if e.doctrine else None),
             "enemy_trait": None if phase=="camp" else trait, "forecast": forecast,
             "block": e.block, "turn": e.turn, "turn_limit": 12 if state.round_no==10 else 8,
             "enemy_hp": None if phase=="camp" else e.enemy_hp, "enemy_max_hp": None if phase=="camp" else e.enemy_max_hp, "barrier": None if phase=="camp" else e.barrier,

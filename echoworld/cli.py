@@ -79,9 +79,13 @@ def main() -> None:
         if combat_state.elemental:
             e = preview["elemental"]
             print(f"生命{e['hp']}/{e['max_hp']}，护盾{e['block']}；敌人{e['enemy_hp']}/{e['enemy_max_hp']}，屏障{e['barrier']}；附着{e['aura']}，草原核{e['cores']}；第{e['turn']}回合，预告{e['intent']} {e['incoming']}伤。")
-            if e.get("edition")==2:
+            if e.get("edition",1)>=2:
                 print("留牌："+(e["held"] or ("本回合次数已使用" if e["hold_used"] else "尚未使用；element_hold_元素名")))
                 if e["forecast"]: print("攻击节奏："+" → ".join(f"第{x['turn']}回合{x['damage']}伤" for x in e["forecast"]))
+            if e.get("edition",1)>=3:
+                print("机变：留牌或element_parry_元素名弃牌换4盾，每回合二选一；不耗能量。")
+                if e["doctrine"]:
+                    print("流派："+e["doctrine"]["title"]+" · "+e["doctrine"]["description"]+("（本回合已触发）" if e["doctrine"]["used"] else "（本回合待触发）"))
         print(f"章节：{preview['chapter']['title']} · 守卫提示：{preview['guard_comments'][guard_id]}")
         if preview["blessing_name"]:
             print(f"本局祝福：【{preview['blessing_name']}】Lv.{preview['blessing_level']} · {preview['blessing_description']}")
@@ -194,7 +198,7 @@ def main() -> None:
                     mode = {"tower": TACTICAL_RULESET, "tower_blessed": BLESSED_RULESET,
                             "tower_expedition": EXPEDITION_RULESET, "tower_spire": SPIRE_RULESET,
                             "tower_routes": ROUTES_RULESET, "tower_cards": CARDS_RULESET, "tower_elements": ELEMENTS_RULESET}[command]
-                    combat = start_combat(state, seed=args.seed, ruleset=mode, elements_edition=2)
+                    combat = start_combat(state, seed=args.seed, ruleset=mode, elements_edition=3)
                     print("爬塔开始。七元素模式请用element_*出牌/结束回合；其他模式按各自规则预览行动。")
                     show_scene(combat)
             else:

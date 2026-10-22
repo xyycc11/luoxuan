@@ -118,10 +118,15 @@ def visible_packet(game, combat, version, npc_id, goal, question, kind):
                    "element_boss": "第十层首领90生命、20屏障，反应额外削盾4；破盾削弱下次攻击4。不是即死遭遇。"}
         if phase == "camp":
             reasons["element_camp"] = "恢复至多12生命或所有牌永久+1基础伤害，二选一；不能同时领取。"
-        if e.get("edition") == 2:
+        if e.get("edition",1) >= 2:
             reasons["element_hold"] = "每回合可留1张当前手牌到下回合，不耗能量；若现在用掉则不保留，也不能再留第二张。结合后续攻击预告准备连招或防护。"
             if phase == "combat":
                 reasons["enemy_style"] = e["enemy_trait"]
+        if e.get("edition",1) >= 3:
+            reasons["element_gambit"] = "每回合机变只有一次：留一张准备下回合，或弃一张换本回合4盾；招架不攻击、不挂元素、不耗能量。"
+            reasons["element_doctrine"] = "营地可放弃回血/加伤，学本局唯一流派：每回合首次反应额外3伤、3盾或返1能量；学后不可更换。"
+            if phase == "camp":
+                reasons["element_camp"] = "营地只能领一种：回血12、永久加伤1，或学一种唯一流派；当前可选项以界面为准，不能同时领取。"
     return {"kind": kind, "version": version, "ruleset": combat.ruleset, "npc_id": npc_id,
             "npc_name": role.display_name, "goal": GOALS[goal], "question": question,
             "status": combat.status, "round_no": combat.round_no, "phase": phase,
@@ -149,11 +154,15 @@ def default_selection(packet):
             if packet["phase"] == "camp":
                 action = "element_rest" if e["hp"] < 32 else "element_attune"
             else:
-                playable = [row for row in options if row["choice_id"] != "element_end" and row.get("kind") != "hold"]
+                playable = [row for row in options if row["choice_id"] != "element_end" and row.get("kind") not in {"hold", "parry"}]
                 # 当前一步启发式；不假称完整连招搜索或未来牌序最优。
                 action = max(playable, key=lambda row: (row.get("damage",0) + row.get("barrier_damage",0)
                     + min(row.get("block_after",0)-e["block"], max(0,e["incoming"]-e["block"]-e["weaken"]))
                     + row.get("heal",0), bool(row.get("reaction"))))["choice_id"] if playable else "element_end"
+                # 无可支付牌且会掉血时，用一张余牌招架；不是完整连招或留牌价值搜索。
+                parries = [row for row in options if row.get("kind") == "parry"]
+                if not playable and parries and e["incoming"] > e["block"] + e["weaken"]:
+                    action = parries[0]["choice_id"]
         elif packet["goal"] == GOALS["recover"] and packet["focus"] is not None:
             action = max(options, key=lambda row: row.get("focus_after", 0))["choice_id"]
         elif packet["phase"] == "camp":

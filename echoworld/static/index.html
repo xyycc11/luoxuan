@@ -295,15 +295,15 @@ function displayElements(combat){
   }
   panel.append(meters);
   const details=document.createElement('p');details.textContent=combat.phase==='camp'
-    ?'出发前选择一次：回复生命，或提高七张牌的基础伤害。'
+    ?(e.edition>=3&&!e.doctrine?'出发前选择一次：回血、提高伤害，或放弃两者学习一种本局流派。':'出发前选择一次：回复生命，或提高七张牌的基础伤害。')
     :`旅人护盾 ${e.block} · 敌人屏障 ${e.barrier} · 元素附着【${e.aura}】 · 草原核 ${e.cores} · 持续伤害 ${e.dot} · 下张额外伤害 ${e.next_bonus}`;
   const intent=document.createElement('p');intent.className='element-intent';intent.textContent=active&&combat.phase==='combat'
     ?`敌方预告：${e.intent} ${e.incoming}伤 · 削弱${e.weaken} · 当前预计失去${Math.max(0,e.incoming-e.weaken-e.block)}生命`
     :active?'休整不会消耗战斗回合，敌人尚未揭晓。':'结局已保存，不再出牌。';
   const last=document.createElement('p');last.className='element-last';last.textContent=e.last;
   panel.append(details,intent,last);
-  if(e.edition===2){
-    const hold=document.createElement('p');hold.className='element-hold-status';hold.textContent=e.held?`已留牌【${e.held}】；若本回合打出，不会再保留。`:e.hold_used?'本回合留牌次数已使用。':'每回合可留1张未用手牌，为下一回合准备；不花能量。';
+  if(e.edition>=2){
+    const hold=document.createElement('p');hold.className='element-hold-status';hold.textContent=e.held?`已留牌【${e.held}】；若本回合打出，不会再保留。`:e.hold_used?(e.edition>=3?'本回合机变已使用，不能再留牌或招架。':'本回合留牌次数已使用。'):(e.edition>=3?'机变二选一：留1张准备下回合，或弃1张换本回合4盾；每回合一次、不耗能量。':'每回合可留1张未用手牌，为下一回合准备；不花能量。');
     panel.append(hold);
     if(combat.phase!=='camp'){
       const trait=document.createElement('p');trait.textContent='敌人特性：'+e.enemy_trait;panel.append(trait);
@@ -311,24 +311,29 @@ function displayElements(combat){
         for(const row of e.forecast){const item=document.createElement('span');item.textContent=`${row.turn===e.turn?'当前':'第'+row.turn+'回合'} · ${row.title} ${row.damage}伤`;forecast.append(item)}panel.append(forecast)}
     }
   }
+  if(e.doctrine){const doctrine=document.createElement('p');doctrine.className='element-doctrine';doctrine.textContent=`流派【${e.doctrine.title}】 · ${e.doctrine.description} · ${e.doctrine.used?'本回合已触发':'本回合待触发'}`;panel.append(doctrine)}
   const guide=document.createElement('details'),summary=document.createElement('summary');summary.textContent='七张卡与元素反应速查 · 原创简化规则';guide.append(summary);
   for(const card of e.cards){const row=document.createElement('p');row.textContent=`${card.title} · 耗${card.cost}能量 · 基础${card.damage}伤 · ${card.description}`;guide.append(row)}
   for(const text of e.guide){const row=document.createElement('p');row.textContent=text;guide.append(row)}
   panel.append(guide);
   el('cardHand').hidden=!active;el('cardHand').replaceChildren();
-  let holdChoices=null;
+  let holdChoices=null,parryChoices=null;
   for(const option of combat.options){
-    const button=document.createElement('button');button.className='tactic-card element-card'+(option.kind==='hold'?' hold-card':'');button.dataset.action=option.choice_id;button.dataset.element=option.element||'neutral';
-    const meta=document.createElement('small');meta.className='card-cost';meta.textContent=option.kind==='hold'?'留牌 · 每回合限1次 · 不耗能量':option.cost===undefined?'营地取舍':option.choice_id==='element_end'?'敌方行动 / 抽新手牌':`${option.cost} 能量 · 本回合可连打`;
+    const button=document.createElement('button');button.className='tactic-card element-card'+(['hold','parry'].includes(option.kind)?' hold-card':'');button.dataset.action=option.choice_id;button.dataset.element=option.element||'neutral';
+    const meta=document.createElement('small');meta.className='card-cost';meta.textContent=option.kind==='parry'?'弃牌换盾 · 与留牌共享机变':option.kind==='hold'?(e.edition>=3?'留牌 · 与招架共享机变':'留牌 · 每回合限1次 · 不耗能量'):option.cost===undefined?'营地取舍':option.choice_id==='element_end'?'敌方行动 / 抽新手牌':`${option.cost} 能量 · 本回合可连打`;
     const name=document.createElement('strong');name.textContent=option.title;
     const description=document.createElement('span');description.textContent=option.description;
     button.append(meta,name,description);
     if(option.kind==='hold'){
       if(!holdChoices){holdChoices=document.createElement('details');holdChoices.className='hold-choices';const summary=document.createElement('summary');summary.textContent='准备下一回合 · 选择留1张牌';holdChoices.append(summary)}
       holdChoices.append(button);
+    }else if(option.kind==='parry'){
+      if(!parryChoices){parryChoices=document.createElement('details');parryChoices.className='hold-choices';const summary=document.createElement('summary');summary.textContent='应对本回合 · 弃1张牌换4盾（本回合不能再留牌）';parryChoices.append(summary)}
+      parryChoices.append(button);
     }else el('cardHand').append(button);
   }
   if(holdChoices)el('cardHand').append(holdChoices);
+  if(parryChoices)el('cardHand').append(parryChoices);
   if(!active){
     el('runSummary').hidden=false;
     const h=document.createElement('h3');h.textContent=combat.status==='cleared'?'七曜终章 · 首领击败':'此程止步 · 保留战斗记录';
@@ -364,10 +369,11 @@ async function refresh(){
   if(state.combat){
     el('scene').textContent=state.combat.status==='active'
       ?(state.combat.phase==='blessing'?'已恢复开场祝福；候选不重抽，请选择其中一种。'
-        :state.combat.phase==='camp'?'已恢复营地选择；下一轮敌人尚未揭晓。请选择休整、共鸣或战功，不会消耗战斗轮次。'
+        :state.combat.phase==='camp'?(state.combat.elemental?'已恢复营地取舍：按当前选项选择回血、加伤或流派；只能领取一种，不消耗战斗回合。':'已恢复营地选择；下一轮敌人尚未揭晓。请选择休整、共鸣或战功，不会消耗战斗轮次。')
         :state.combat.phase==='relic'?'已恢复遗物三选一，候选不会重抽；下一轮敌人尚未揭晓。领取不会立即加分。'
         :state.combat.phase==='route'?'已恢复章节分岔；选择不会耗战斗轮次。先看专注成本与目标，不改变抽怪风险。'
         :state.combat.phase==='draft'?'已恢复营地选牌，候选不重抽；选新卡或跳过，之后揭晓下一轮。'
+        :state.combat.elemental?`已恢复第${state.combat.round_no}层、第${state.combat.elemental.turn}回合的原手牌、机变与流派次数；刷新不重抽。`
         :state.combat.deck?`已恢复第${state.combat.round_no}轮原手牌，没有重新抽牌；只能使用当前可用牌。`
         :`已恢复第${state.combat.round_no}轮：${state.combat.monster_id}；选择攻击或防御。`)
       :`已恢复本局结果：${state.combat.status==='cleared'?'十轮通关':'本次试炼止步'}；总分${state.combat.score}。完整计分与印记见结局面板。`;
@@ -442,6 +448,7 @@ async function showAction(result){
   titles.ELEMENT_TURN_ENDED='敌方行动已结算 · 新手牌已准备。';
   titles.ELEMENT_CAMP_CHOSEN='营地选择已保存 · 继续试炼。';
   titles.ELEMENT_HELD='留牌已记录 · 结束回合后保留，不会立即抽牌。';
+  titles.ELEMENT_PARRIED='招架已结算 · 本回合获得护盾，留牌/招架机会已用。';
   el('scene').textContent=titles[result.code]||`动作未完成：${result.code}\n${result.rule_reply||''}`;
   if(result.scene){
     let scene=result.scene;
