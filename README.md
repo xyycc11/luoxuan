@@ -8,6 +8,8 @@
 
 ## 能力与边界
 
+- **旅人与角色外观（2026-10-22）**：网页开局选择空或荧，随存档保存且不影响数值；双守卫使用用户提供的图片，八种敌人使用游戏图标。图片区域不叠加人物文字，操作与无障碍标签保留；营地不提前展示下层怪物。旅人图片为前瞻宣传图裁切，并非透明立绘；素材来源和权利说明见[第三方素材清单](echoworld/static/assets/THIRD_PARTY_ASSETS.md)。没有生成新人物或怪物图片。
+
 - **双守卫 Skill**：选择温迪或法尔伽，提供不同口吻的有限闲聊、原创小诗、鼓励及依据真实任务阶段的新手指引。
 - **受控 Agent 图**：LangGraph 编排 model → tools → model，仅允许查询许可、读取背包，设有调用预算与重复调用检测。
 - **权威游戏状态**：显式动作推进许可任务与爬塔，SQL 保存进度；版本 CAS、同事务动作回执与幂等重放防止重复结算。
@@ -57,7 +59,7 @@ python -m echoworld.cli --scenario quest --seed 2
 
 离线规则推演：`python -m echoworld.verify_elements`。新版edition=2的100组固定seed对照中，当前手牌连招不留牌通关100组、启发式留牌100组、即时伤害贪心34组、随机合法出牌66组；策略使用同样营地规则。留牌平均余血25.29，不留牌25.67，留牌并非总是更优。这只是脚本对照，不是真人胜率、全局最优或乐趣提升证明。
 
-2026-10-22第三版发布副本实测`python -X utf8 -m unittest discover -s echoworld -p "test_*.py" -q`：457项65.275秒通过，退出码0。使用临时SQL/本机HTTP/假模型，不是外部LLM、Redis、Milvus整链验收。
+2026-10-22外观版发布副本实测`python -X utf8 -m unittest discover -s echoworld -p "test_*.py" -q`：469项67.826秒通过，退出码0。使用临时SQL/本机HTTP/假模型，不是外部LLM、Redis、Milvus整链验收。
 
 ## 兼容保留：旧牌组、遗物与分岔路线
 

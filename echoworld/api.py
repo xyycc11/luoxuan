@@ -118,6 +118,7 @@ class KnowledgeFeedbackRequest(BaseModel):
 class ActionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     action: Literal["accept", "claim", "submit", "enter", "tower", "tower_blessed", "tower_expedition", "tower_spire", "tower_routes", "tower_cards", "tower_elements",
+                    "traveler_aether", "traveler_lumine",
                     "element_pyro", "element_hydro", "element_electro", "element_cryo", "element_dendro", "element_anemo", "element_geo",
                     "element_end", "element_rest", "element_attune",
                     "element_hold_pyro", "element_hold_hydro", "element_hold_electro", "element_hold_cryo",

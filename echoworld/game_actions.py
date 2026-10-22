@@ -19,6 +19,7 @@ SUCCESS = {"QUEST_ACCEPTED", "TRAINING_HERB_CLAIMED", "COMPLETED", "ENTER_ALLOWE
 SUCCESS.update({"ELEMENT_PLAYED", "ELEMENT_TURN_ENDED", "ELEMENT_CAMP_CHOSEN"})
 SUCCESS.add("ELEMENT_HELD")
 SUCCESS.add("ELEMENT_PARRIED")
+SUCCESS.add("TRAVELER_SELECTED")
 
 
 def public_state(game: GameState, combat: CombatState | None) -> dict:
@@ -26,6 +27,7 @@ def public_state(game: GameState, combat: CombatState | None) -> dict:
     preview = combat_preview(combat) if combat else None
     return {"inventory": dict(game.inventory), "quest_stage": game.quest_stage,
             "has_permit": game.has_permit, "training_herb_claimed": game.training_herb_claimed,
+            "traveler": game.traveler,
             "combat": None if combat is None else {
                 "round_no": combat.round_no, "status": combat.status, "score": combat.score,
                 "monster_id": (combat.current_monster.monster_id if combat.current_monster else None)
@@ -37,7 +39,14 @@ def apply_action(game: GameState, combat: CombatState | None, action: str,
                  expected_round: int | None = None, *, seed: int = 2) -> tuple[dict, CombatState | None]:
     """调用端负责短事务保存；seed仅由服务端提供，无外部模型调用。"""
     scene = None
-    if action == "accept":
+    if action in {"traveler_aether", "traveler_lumine"}:
+        choice = action.removeprefix("traveler_")
+        if game.traveler is not None and game.traveler != choice:
+            code = "TRAVELER_ALREADY_SELECTED"
+        else:
+            game.traveler = choice
+            code = "TRAVELER_SELECTED"
+    elif action == "accept":
         code = accept_permit_quest(game)
     elif action == "claim":
         code = claim_training_herb(game)

@@ -14,10 +14,18 @@
 <nav aria-label="冒险导航"><a href="#adventure">试炼之旅</a><a href="#aiPanel">守卫顾问</a><a href="#journeyNotes">旅途手记</a></nav>
 <span class="local-indicator"><i aria-hidden="true"></i> 本地存档</span>
 </header>
+<dialog id="travelerPicker" class="traveler-picker" aria-labelledby="travelerPickerTitle">
+<h2 id="travelerPickerTitle">选择你的旅人</h2><p class="muted">空或荧，只改变外观。每个存档选择一次，能力与奖励完全相同。</p>
+<div id="travelerChoices" class="traveler-choices">
+<button type="button" data-traveler="aether" aria-label="选择男旅人空"><img src="/assets/characters/aether.jpg" alt="前瞻节目中的空Q版形象" width="205" height="325"></button>
+<button type="button" data-traveler="lumine" aria-label="选择女旅人荧"><img src="/assets/characters/lumine.jpg" alt="前瞻节目中的荧Q版形象" width="235" height="405"></button>
+</div><p id="travelerStatus" role="status">点击人物开始旅程。</p><button id="travelerRecover" class="secondary" hidden>查询刚才的选择</button>
+</dialog>
 <main class="game-layout">
 <aside class="traveler-panel" aria-label="旅人档案">
 <p class="eyebrow">TRAVELER / 旅人档案</p>
-<div class="traveler-seal" aria-hidden="true">✧</div>
+<div class="traveler-seal" id="travelerPlaceholder" aria-hidden="true">✧</div>
+<div class="traveler-art" id="travelerArt" hidden><img id="travelerPortrait" alt="已选择的旅人" width="235" height="405"></div>
 <h2>随风而行</h2><p class="muted">每一次选择，<br>都是旅途的一部分。</p>
 <label class="player-label">演示玩家 <select id="player"><option value="alice">Alice</option><option value="bob">Bob</option></select></label>
 <dl class="save-facts"><div><dt>存档方式</dt><dd>本机独立存档</dd></div><div><dt>试炼轮数</dt><dd>十轮 · 单次旅程</dd></div><div><dt>奖励结算</dt><dd>由游戏规则核验</dd></div></dl>
@@ -52,6 +60,7 @@
 <div id="route" class="route" aria-label="十轮试炼路线"></div>
 <div class="battle-panel" id="battleCard" aria-live="polite">
 <div class="battle-heading"><p class="eyebrow">ENCOUNTER / 当前战况</p><p id="battleStatus">尚未开始试炼。</p></div>
+<figure class="enemy-art" id="enemyArt" hidden><img id="enemyPortrait" alt="当前敌人" width="256" height="256"></figure>
 <progress id="battleProgress" value="0" max="10" aria-label="已完成试炼轮数"></progress>
 <div class="stats"><div class="stat"><small>当前分数</small><strong id="scoreValue">—</strong></div><div class="stat"><small id="energyLabel">可用专注</small><strong id="focusValue">—</strong></div><div class="stat"><small>旅程章节</small><strong id="chapterValue">准备</strong></div></div>
 <p id="battleFocus">先完成许可任务。</p><p id="blessingSummary"></p><p id="battleHint"></p>
@@ -81,6 +90,11 @@
 <section id="aiPanel" class="companion-panel">
 <div class="companion-heading"><span class="companion-seal" aria-hidden="true">✧</span><div><p class="eyebrow">YOUR COMPANION</p><h2>旅途中的守卫</h2></div></div>
 <label class="npc-label">选择守卫 <select id="npc"><option value="venti">温迪 · 风与诗歌</option><option value="varka">法尔伽 · 骑士与指引</option></select></label>
+<div class="guard-art"><img id="guardPortrait" src="/assets/characters/venti.jpg" alt="温迪" width="1747" height="1401"></div>
+<div id="guardPortraitChoices" class="guard-portrait-choices" role="group" aria-label="选择守卫">
+<button type="button" data-npc="venti" aria-label="选择温迪" aria-pressed="true"><img src="/assets/characters/venti.jpg" alt="温迪" width="1747" height="1401"></button>
+<button type="button" data-npc="varka" aria-label="选择法尔伽" aria-pressed="false"><img src="/assets/characters/varka.jpg" alt="法尔伽" width="1018" height="863"></button>
+</div>
 <p class="companion-intro">看清眼前的局面，再迈出下一步。</p>
 <span class="tag" id="aiModeLabel">本地建议</span>
 <h3 class="advisor-title">向守卫问策略 · 战后复盘</h3>
@@ -105,11 +119,18 @@
 <form id="share"><label>建议主题 <select id="topic"></select></label><pre id="preview"></pre><textarea id="suggestion" maxlength="600" rows="3" placeholder="例如：希望新手能看到交付herb的前置条件。不要填私人信息。" required></textarea><label><input type="checkbox" id="consent" required>我同意本条建议用于人工审核并发布下方标准FAQ，可随时撤回；建议原文不对其他玩家公开。</label><div class="share-buttons"><button>提交待审建议</button><button id="knowledgeRefresh" class="secondary" type="button">刷新待审状态与公共FAQ</button></div></form>
 <pre id="shareStatus"></pre><div id="myCandidates"></div><div id="publicFaq"></div></details></section>
 </main>
-<footer>EchoWorld · 原神世界观同人学习项目，非官方内容。原创副本、机制与AI生成场景插画。<span>下一阵风，仍由你选择方向。</span></footer>
+<footer>EchoWorld · 原神世界观同人学习项目，非官方内容。角色与怪物美术版权归原权利方，素材来源见项目说明；原背景沿用既有插画。<span>下一阵风，仍由你选择方向。</span></footer>
 <script>
 let currentState = null;
 let isBusy = false;
 let aiBusy=false,aiAvailable=false,aiProposal=null,aiLastRequest=null,aiNonce=0;
+const TRAVELER_ART={aether:'/assets/characters/aether.jpg',lumine:'/assets/characters/lumine.jpg'};
+const GUARD_ART={venti:'/assets/characters/venti.jpg',varka:'/assets/characters/varka.jpg'};
+const MONSTER_ART={
+  '丘丘人':'hilichurl.png','木盾丘丘暴徒':'wooden-mitachurl.png','火史莱姆':'pyro-slime.png',
+  '风丘丘萨满':'anemo-samachurl.png','遗迹守卫':'ruin-guard.png','大伟丘':'unusual-hilichurl.png',
+  '遗迹重机':'ruin-grader.png','深渊咏者':'abyss-lector.png','深渊咏者 · 七曜试炼':'abyss-lector.png'
+};
 const el = id => document.getElementById(id);
 const pendingKey = () => 'echoworld:pending:' + el('player').value;
 function remember(kind,body){localStorage.setItem(pendingKey(),JSON.stringify({kind,body}))}
@@ -131,9 +152,11 @@ function updateActionButtons(){
     guard:active&&(combat.options||[]).some(option=>option.choice_id==='guard')};
   for(const option of combat?.options||[])allowed[option.choice_id]=active&&option.enabled!==false;
   document.querySelectorAll('#actions button').forEach(button=>{
-    button.disabled=isBusy||pending||!state||!allowed[button.dataset.action];
+    button.disabled=isBusy||pending||!state||!state.traveler||!allowed[button.dataset.action];
     button.title=pending?'请先查询/恢复未确认请求。':(!allowed[button.dataset.action]?'当前状态不允许这个动作。':'');
   });
+  document.querySelectorAll('#travelerChoices button').forEach(button=>button.disabled=isBusy||pending||!state);
+  el('travelerRecover').hidden=!pending;el('travelerRecover').disabled=isBusy;
 }
 function busy(on){
   isBusy=on;
@@ -143,6 +166,11 @@ function busy(on){
   updateAIControls();
 }
 function displayBattle(combat){
+  const art=MONSTER_ART[combat?.monster_id];
+  const showEnemy=Boolean(art&&combat&&(combat.phase==='combat'||combat.status!=='active'));
+  el('enemyArt').hidden=!showEnemy;
+  if(showEnemy){el('enemyPortrait').src='/assets/monsters/'+art;el('enemyPortrait').alt=combat.monster_id}
+  else{el('enemyPortrait').removeAttribute('src');el('enemyPortrait').alt='当前没有已揭晓敌人'}
   el('battleOptions').replaceChildren();
   el('blessingChoices').replaceChildren();el('blessingChoices').hidden=true;
   el('blessingSummary').textContent='';
@@ -362,7 +390,20 @@ async function request(suffix,body,method){
   if(!response.ok)throw Error(`HTTP ${response.status}: ${JSON.stringify(data.detail||data.code)}`);
   return data;
 }
-function display(state){currentState=state;el('state').textContent=JSON.stringify(state,null,2);displayQuest(state);displayBattle(state.combat);updateActionButtons();updateAIControls()}
+function displayTraveler(state){
+  const image=TRAVELER_ART[state.traveler];
+  el('travelerArt').hidden=!image;el('travelerPlaceholder').hidden=Boolean(image);
+  if(image){el('travelerPortrait').src=image;el('travelerPortrait').alt=state.traveler==='aether'?'旅人空':'旅人荧'}
+  const picker=el('travelerPicker');
+  if(image&&picker.open)picker.close();
+  if(!image&&!picker.open)picker.showModal();
+}
+function displayGuardPortrait(){
+  const npc=el('npc').value;
+  el('guardPortrait').src=GUARD_ART[npc];el('guardPortrait').alt=npc==='venti'?'温迪':'法尔伽';
+  document.querySelectorAll('#guardPortraitChoices button').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.npc===npc)));
+}
+function display(state){currentState=state;el('state').textContent=JSON.stringify(state,null,2);displayTraveler(state);displayQuest(state);displayBattle(state.combat);updateActionButtons();updateAIControls()}
 async function run(job){busy(true);try{await job()}catch(error){el('scene').textContent=error.message}finally{busy(false)}}
 async function refresh(){
   const state=await request('state');display(state);
@@ -449,6 +490,7 @@ async function showAction(result){
   titles.ELEMENT_CAMP_CHOSEN='营地选择已保存 · 继续试炼。';
   titles.ELEMENT_HELD='留牌已记录 · 结束回合后保留，不会立即抽牌。';
   titles.ELEMENT_PARRIED='招架已结算 · 本回合获得护盾，留牌/招架机会已用。';
+  titles.TRAVELER_SELECTED='旅人已选择并保存 · 现在可以开始旅程。';
   el('scene').textContent=titles[result.code]||`动作未完成：${result.code}\n${result.rule_reply||''}`;
   if(result.scene){
     let scene=result.scene;
@@ -466,7 +508,24 @@ async function showHistory(){
   el('reply').textContent=data.turns.length?data.turns.map(turn=>'玩家：'+turn.user+'\n'+turn.assistant).join('\n\n'):'这位守卫还没有与你的聊天记录。';
   el('trace').textContent='当前守卫：'+el('npc').selectedOptions[0].textContent;
 }
-el('npc').onchange=()=>run(async()=>{resetAI();displayGuardComment(currentState?.combat);await showHistory();await loadKnowledge()});
+el('npc').onchange=()=>run(async()=>{resetAI();displayGuardPortrait();displayGuardComment(currentState?.combat);await showHistory();await loadKnowledge()});
+el('guardPortraitChoices').onclick=event=>{
+  const button=event.target.closest('button[data-npc]');if(!button||button.disabled)return;
+  el('npc').value=button.dataset.npc;el('npc').dispatchEvent(new Event('change'));
+};
+el('travelerPicker').addEventListener('cancel',event=>event.preventDefault());
+el('travelerRecover').onclick=()=>el('recover').click();
+el('travelerChoices').onclick=event=>{
+  const button=event.target.closest('button[data-traveler]');if(!button||button.disabled)return;
+  run(async()=>{
+    if(localStorage.getItem(pendingKey()))throw Error('请先查询刚才的选择，避免重复提交。');
+    el('travelerStatus').textContent='正在保存旅人…';
+    const body={action:'traveler_'+button.dataset.traveler,request_id:crypto.randomUUID(),expected_version:currentState.version};
+    remember('action',body);
+    try{await showAction(await request('action',body));el('travelerStatus').textContent='旅人已保存。'}
+    catch(error){el('travelerStatus').textContent='保存结果尚未确认，请点“查询刚才的选择”。';throw error}
+  });
+};
 el('actions').onclick=event=>{
   const button=event.target.closest('button[data-action]');
   const action=button?.dataset.action;

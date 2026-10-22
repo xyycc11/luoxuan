@@ -17,8 +17,12 @@ class GameState:
     quest_stage: str = "not_started"
     has_permit: bool = False
     training_herb_claimed: bool = False
+    # 纯外观选择，旧存档缺字段默认未选；不影响能力、奖励或许可。
+    traveler: str | None = None
 
     def __post_init__(self) -> None:
+        if self.traveler is not None and (type(self.traveler) is not str or self.traveler not in {'aether', 'lumine'}):
+            raise ValueError('traveler must be aether, lumine or None')
         if self.quest_stage not in VALID_QUEST_STAGES:
             allowed = ", ".join(sorted(VALID_QUEST_STAGES))
             raise ValueError(
