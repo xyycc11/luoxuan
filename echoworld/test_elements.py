@@ -299,13 +299,13 @@ class ElementApi(unittest.TestCase):
 
     def test_full_http_tower_and_final_boss_do_not_double_award(self):
         self.start()
-        _,_,actions=run(2)
+        _,_,actions=run(2,edition=2)
         for action in actions:
             response=self.post(self.body(action))
             self.assertEqual(response.status_code,200)
             self.assertTrue(response.json()["ok"],response.json()["code"])
         before=self.state();combat=before["combat"]
-        self.assertEqual((combat["status"],combat["score"],combat["elemental"]["hp"]),("cleared",270,21))
+        self.assertEqual((combat["status"],combat["score"],combat["elemental"]["hp"]),("cleared",270,22))
         self.assertEqual(combat["report"]["completed_rounds"],10)
         self.assertEqual(self.post(self.body("element_pyro","after-win")).json()["code"],"COMBAT_FINISHED")
         self.assertEqual(self.state(),before)

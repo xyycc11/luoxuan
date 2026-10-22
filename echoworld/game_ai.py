@@ -118,6 +118,10 @@ def visible_packet(game, combat, version, npc_id, goal, question, kind):
                    "element_boss": "第十层首领90生命、20屏障，反应额外削盾4；破盾削弱下次攻击4。不是即死遭遇。"}
         if phase == "camp":
             reasons["element_camp"] = "恢复至多12生命或所有牌永久+1基础伤害，二选一；不能同时领取。"
+        if e.get("edition") == 2:
+            reasons["element_hold"] = "每回合可留1张当前手牌到下回合，不耗能量；若现在用掉则不保留，也不能再留第二张。结合后续攻击预告准备连招或防护。"
+            if phase == "combat":
+                reasons["enemy_style"] = e["enemy_trait"]
     return {"kind": kind, "version": version, "ruleset": combat.ruleset, "npc_id": npc_id,
             "npc_name": role.display_name, "goal": GOALS[goal], "question": question,
             "status": combat.status, "round_no": combat.round_no, "phase": phase,
@@ -145,7 +149,7 @@ def default_selection(packet):
             if packet["phase"] == "camp":
                 action = "element_rest" if e["hp"] < 32 else "element_attune"
             else:
-                playable = [row for row in options if row["choice_id"] != "element_end"]
+                playable = [row for row in options if row["choice_id"] != "element_end" and row.get("kind") != "hold"]
                 # 当前一步启发式；不假称完整连招搜索或未来牌序最优。
                 action = max(playable, key=lambda row: (row.get("damage",0) + row.get("barrier_damage",0)
                     + min(row.get("block_after",0)-e["block"], max(0,e["incoming"]-e["block"]-e["weaken"]))

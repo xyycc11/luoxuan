@@ -239,7 +239,10 @@ class GameAIAPI(unittest.TestCase):
             result = self.post(self.body(question=mode)).json()
             self.assertEqual(result["content"]["source"], "rule")
             self.assertEqual(result["status"], "degraded")
-            self.assertNotIn("999", json.dumps(result))
+            # 只验证玩家可见内容，随机任务哈希合法地可能含999，不能误判成模型注入。
+            self.assertNotIn("999", json.dumps(result["content"]))
+            self.assertIn(result["content"]["action"]["choice_id"],
+                          {row["choice_id"] for row in before["combat"]["options"] if row.get("enabled",True)})
         self.assertEqual(self.state(), before)
 
     def test_unknown_provider_errors_are_not_exposed(self):

@@ -12,6 +12,13 @@ def choose(state, policy="combo"):
         return "element_rest" if e.hp < 29 else "element_attune"
     legal = [k for k in e.hand if CARDS[k].cost <= e.energy]
     if not legal:
+        if e.edition == 2 and not e.hold_used and e.hand and policy not in {"random", "greedy", "combo_no_hold"}:
+            # 对当前公开附着/草原核，以恢复3能量后的牌面评估留牌；不看未来抽牌。
+            def held_value(k):
+                current = deepcopy(e);current.energy=3
+                after,effect=card_effect(current,k)
+                return effect["damage"]+effect["barrier_damage"]+effect["heal"]+max(0,after.block-e.block)*0.7
+            return "element_hold_" + max(e.hand,key=held_value)
         return "element_end"
     if policy == "random":
         return "element_" + Random(f"policy:{state.seed}:{len(e.log)}").choice(legal)
@@ -39,31 +46,33 @@ def choose(state, policy="combo"):
     return best[1]
 
 
-def run(seed=2, policy="combo", trace=False):
-    s = start_combat(GameState("demo", "demo", has_permit=True), seed, ruleset=ELEMENTS_RULESET)
+def run(seed=2, policy="combo", trace=False, edition=1):
+    s = start_combat(GameState("demo", "demo", has_permit=True), seed, ruleset=ELEMENTS_RULESET, elements_edition=edition)
     actions = []
     for _ in range(600):
         if s.status != "active": break
         action = choose(s, policy)
         code = perform(s, action, s.round_no)
-        if code not in {"ELEMENT_PLAYED", "ELEMENT_TURN_ENDED", "ELEMENT_CAMP_CHOSEN", "ROUND_RESOLVED", "TOWER_CLEARED", "PLAYER_DEAD"}:
+        if code not in {"ELEMENT_PLAYED", "ELEMENT_TURN_ENDED", "ELEMENT_CAMP_CHOSEN", "ELEMENT_HELD", "ROUND_RESOLVED", "TOWER_CLEARED", "PLAYER_DEAD"}:
             raise AssertionError(code)
         actions.append(action)
         if trace: print(s.elemental.log[-1]["text"])
     assert s.status != "active", "simulation did not terminate"
-    return {"seed": seed, "policy": policy, "status": s.status, "floor": s.round_no,
+    return {"seed": seed, "policy": policy, "edition": edition, "status": s.status, "floor": s.round_no,
             "hp": s.elemental.hp, "score": s.score, "actions": len(actions),
-            "reactions": preview(s)["report"]["reactions"]}, s, actions
+            "reactions": preview(s)["report"]["reactions"],
+            "holds": sum(row["action"].startswith("element_hold_") for row in s.elemental.log)}, s, actions
 
 
 if __name__ == "__main__":
     import json
     from statistics import mean
-    for policy in ("random", "greedy", "combo"):
-        results = [run(seed, policy)[0] for seed in range(100)]
+    for policy in ("random", "greedy", "combo_no_hold", "combo"):
+        results = [run(seed, policy, edition=2)[0] for seed in range(100)]
         print(json.dumps({"policy": policy, "runs": len(results),
             "cleared": sum(r["status"]=="cleared" for r in results),
             "avg_hp": round(mean(r["hp"] for r in results),2),
             "avg_floor": round(mean(r["floor"] for r in results),2),
-            "avg_reactions": round(mean(r["reactions"] for r in results),2)}, ensure_ascii=False))
-    print(json.dumps(run(2)[0], ensure_ascii=False))
+            "avg_reactions": round(mean(r["reactions"] for r in results),2),
+            "avg_holds": round(mean(r["holds"] for r in results),2)}, ensure_ascii=False))
+    print(json.dumps(run(2,edition=2)[0], ensure_ascii=False))

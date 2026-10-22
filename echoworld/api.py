@@ -120,6 +120,8 @@ class ActionRequest(BaseModel):
     action: Literal["accept", "claim", "submit", "enter", "tower", "tower_blessed", "tower_expedition", "tower_spire", "tower_routes", "tower_cards", "tower_elements",
                     "element_pyro", "element_hydro", "element_electro", "element_cryo", "element_dendro", "element_anemo", "element_geo",
                     "element_end", "element_rest", "element_attune",
+                    "element_hold_pyro", "element_hold_hydro", "element_hold_electro", "element_hold_cryo",
+                    "element_hold_dendro", "element_hold_anemo", "element_hold_geo",
                     "strike", "guard", "boon_wind", "boon_flame", "boon_knight",
                     "camp_rest", "camp_forge", "camp_cash",
                     "relic_ember", "relic_mirror", "relic_feather", "relic_lantern", "relic_echo", "relic_dew",

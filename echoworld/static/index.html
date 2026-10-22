@@ -302,18 +302,33 @@ function displayElements(combat){
     :active?'休整不会消耗战斗回合，敌人尚未揭晓。':'结局已保存，不再出牌。';
   const last=document.createElement('p');last.className='element-last';last.textContent=e.last;
   panel.append(details,intent,last);
+  if(e.edition===2){
+    const hold=document.createElement('p');hold.className='element-hold-status';hold.textContent=e.held?`已留牌【${e.held}】；若本回合打出，不会再保留。`:e.hold_used?'本回合留牌次数已使用。':'每回合可留1张未用手牌，为下一回合准备；不花能量。';
+    panel.append(hold);
+    if(combat.phase!=='camp'){
+      const trait=document.createElement('p');trait.textContent='敌人特性：'+e.enemy_trait;panel.append(trait);
+      if(e.forecast.length){const forecast=document.createElement('div');forecast.className='element-forecast';
+        for(const row of e.forecast){const item=document.createElement('span');item.textContent=`${row.turn===e.turn?'当前':'第'+row.turn+'回合'} · ${row.title} ${row.damage}伤`;forecast.append(item)}panel.append(forecast)}
+    }
+  }
   const guide=document.createElement('details'),summary=document.createElement('summary');summary.textContent='七张卡与元素反应速查 · 原创简化规则';guide.append(summary);
   for(const card of e.cards){const row=document.createElement('p');row.textContent=`${card.title} · 耗${card.cost}能量 · 基础${card.damage}伤 · ${card.description}`;guide.append(row)}
   for(const text of e.guide){const row=document.createElement('p');row.textContent=text;guide.append(row)}
   panel.append(guide);
   el('cardHand').hidden=!active;el('cardHand').replaceChildren();
+  let holdChoices=null;
   for(const option of combat.options){
-    const button=document.createElement('button');button.className='tactic-card element-card';button.dataset.action=option.choice_id;button.dataset.element=option.element||'neutral';
-    const meta=document.createElement('small');meta.className='card-cost';meta.textContent=option.cost===undefined?'营地取舍':option.choice_id==='element_end'?'敌方行动 / 抽新手牌':`${option.cost} 能量 · 本回合可连打`;
+    const button=document.createElement('button');button.className='tactic-card element-card'+(option.kind==='hold'?' hold-card':'');button.dataset.action=option.choice_id;button.dataset.element=option.element||'neutral';
+    const meta=document.createElement('small');meta.className='card-cost';meta.textContent=option.kind==='hold'?'留牌 · 每回合限1次 · 不耗能量':option.cost===undefined?'营地取舍':option.choice_id==='element_end'?'敌方行动 / 抽新手牌':`${option.cost} 能量 · 本回合可连打`;
     const name=document.createElement('strong');name.textContent=option.title;
     const description=document.createElement('span');description.textContent=option.description;
-    button.append(meta,name,description);el('cardHand').append(button);
+    button.append(meta,name,description);
+    if(option.kind==='hold'){
+      if(!holdChoices){holdChoices=document.createElement('details');holdChoices.className='hold-choices';const summary=document.createElement('summary');summary.textContent='准备下一回合 · 选择留1张牌';holdChoices.append(summary)}
+      holdChoices.append(button);
+    }else el('cardHand').append(button);
   }
+  if(holdChoices)el('cardHand').append(holdChoices);
   if(!active){
     el('runSummary').hidden=false;
     const h=document.createElement('h3');h.textContent=combat.status==='cleared'?'七曜终章 · 首领击败':'此程止步 · 保留战斗记录';
@@ -426,6 +441,7 @@ async function showAction(result){
   titles.ELEMENT_PLAYED='元素牌已结算 · 可以继续搭配，或结束回合。';
   titles.ELEMENT_TURN_ENDED='敌方行动已结算 · 新手牌已准备。';
   titles.ELEMENT_CAMP_CHOSEN='营地选择已保存 · 继续试炼。';
+  titles.ELEMENT_HELD='留牌已记录 · 结束回合后保留，不会立即抽牌。';
   el('scene').textContent=titles[result.code]||`动作未完成：${result.code}\n${result.rule_reply||''}`;
   if(result.scene){
     let scene=result.scene;

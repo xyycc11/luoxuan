@@ -36,7 +36,15 @@ CARDS = {
     "geo": ElementCard("岩 · 磐石守誓", 1, 2, block=5, text="获得5护盾；结晶额外4护盾与1伤，保留附着。"),
 }
 DECK = tuple(CARDS)
-ACTIONS = tuple("element_" + key for key in DECK) + ("element_end", "element_rest", "element_attune")
+HOLD_ACTIONS = tuple("element_hold_" + key for key in DECK)
+ACTIONS = tuple("element_" + key for key in DECK) + HOLD_ACTIONS + ("element_end", "element_rest", "element_attune")
+ENEMY_STYLES = {
+    "丘丘人": ("疾攻", (4, 4, 7), "连续快攻；适合用冻结或结晶稳住节奏。"),
+    "木盾丘丘暴徒": ("盾击", (3, 5, 8), "开场6屏障；反应额外削盾4，破盾削弱下一击4。"),
+    "火史莱姆": ("烈焰", (5, 3, 8), "开场附着火；可用水/冰反应或风/岩利用附着，无官方元素免疫。"),
+    "风丘丘萨满": ("风袭", (2, 8, 4), "先试探再强攻；第二拍是重击，留防护牌应对。"),
+    "遗迹守卫": ("机巧", (2, 5, 12), "第三拍蓄力重击；提前准备冻结、护盾或斩杀。"),
+}
 REACTIONS = {
     frozenset(("pyro", "hydro")): ("蒸发", 5),
     frozenset(("pyro", "cryo")): ("融化", 6),
@@ -79,8 +87,20 @@ class ElementState:
     camp_due: bool = False
     camps: list[dict] = field(default_factory=list)
     log: list[dict] = field(default_factory=list)
+    # 缺字段的旧JSON默认初版；只有新开局显式用第二版，不热改旧局。
+    edition: int = 1
+    held: str | None = None
+    hold_used: bool = False
 
     def __post_init__(self):
+        if type(self.edition) is not int or self.edition not in {1, 2}:
+            raise ValueError("invalid elemental edition")
+        if type(self.hold_used) is not bool:
+            raise ValueError("invalid hold usage")
+        if self.held is not None and (type(self.held) is not str or self.held not in self.hand or not self.hold_used):
+            raise ValueError("held card must exist in hand and consume hold choice")
+        if self.edition == 1 and (self.held is not None or self.hold_used):
+            raise ValueError("first edition cannot hold cards")
         bounds = {"hp": (0, MAX_HP), "energy": (0, ENERGY), "block": (0, 30),
                   "power": (0, 3), "turn": (1, 12), "enemy_hp": (0, BOSS_HP),
                   "enemy_max_hp": (12, BOSS_HP), "barrier": (0, BOSS_BARRIER), "cores": (0, 2),
@@ -131,10 +151,10 @@ def _draw(e, seed, floor):
         e.hand.append(e.draw.pop(0))
 
 
-def new_state(seed):
+def new_state(seed, edition=1):
     pile = list(DECK)
     Random(f"elements:{seed}:start").shuffle(pile)
-    return ElementState(hand=pile[:4], draw=pile[4:], shuffles=1)
+    return ElementState(hand=pile[:4], draw=pile[4:], shuffles=1, edition=edition)
 
 
 def enemy_spec(seed, floor):
@@ -156,6 +176,10 @@ def prepare_floor(state):
     e.enemy_hp = e.enemy_max_hp = hp
     e.barrier = barrier
     e.aura, e.cores, e.dot, e.weaken, e.next_bonus = None, 0, 0, 0, 0
+    e.held, e.hold_used = None, False
+    if e.edition == 2 and not rare and state.round_no != 10:
+        if name == "木盾丘丘暴徒": e.barrier = 6
+        if name == "火史莱姆": e.aura = "pyro"
     e.turn, e.energy, e.block = 1, ENERGY, 0
     e.discard.extend(e.hand)
     e.hand.clear()
@@ -163,14 +187,18 @@ def prepare_floor(state):
     _draw(e, state.seed, state.round_no)
 
 
-def enemy_intent(state):
+def enemy_intent(state, turn=None):
     e = state.elemental
+    turn = e.turn if turn is None else turn
     if state.current_monster.bonus_points:
         return "友好展示", 0
     if state.round_no == 10:
-        name, amount = (("试探斩", 7), ("深渊冲击", 12), ("蓄力重击", 20))[(e.turn - 1) % 3]
-        return name, amount + max(0, e.turn - 6) * 2
-    return ("蓄力重击", 7 + state.round_no // 3) if e.turn % 3 == 0 else ("普通攻击", 3 + state.round_no // 3)
+        name, amount = (("试探斩", 7), ("深渊冲击", 12), ("蓄力重击", 20))[(turn - 1) % 3]
+        return name, amount + max(0, turn - 6) * 2
+    if e.edition == 2:
+        name, values, _ = ENEMY_STYLES[state.current_monster.monster_id]
+        return f"{name} · 第{(turn-1)%3+1}拍", values[(turn-1)%3] + state.round_no // 4
+    return ("蓄力重击", 7 + state.round_no // 3) if turn % 3 == 0 else ("普通攻击", 3 + state.round_no // 3)
 
 
 def _damage(e, amount, reaction=False):
@@ -272,6 +300,14 @@ def perform(state, action, expected_round):
         _record(state, action, points=0, text=f"营地：{'休整恢复' + str(e.hp-before) + '生命' if action == 'element_rest' else '所有牌基础伤害永久+1'}。")
         return "ELEMENT_CAMP_CHOSEN"
     if action in {"element_rest", "element_attune"}: return "ELEMENT_CAMP_NOT_PENDING"
+    if action in HOLD_ACTIONS:
+        if e.edition != 2: return "HOLD_NOT_SUPPORTED"
+        if e.hold_used: return "HOLD_ALREADY_USED"
+        key = action.removeprefix("element_hold_")
+        if key not in e.hand: return "ELEMENT_NOT_IN_HAND"
+        e.held, e.hold_used = key, True
+        _record(state, action, points=0, text=f"保留【{CARDS[key].name}】至下一回合；不花能量、不抽新牌；本回合不能再留第二张。")
+        return "ELEMENT_HELD"
     if action == "element_end":
         dot = e.dot
         e.dot = 0
@@ -291,8 +327,9 @@ def perform(state, action, expected_round):
             return "PLAYER_DEAD"
         e.turn += 1
         e.energy, e.block, e.weaken = ENERGY, 0, 0
-        e.discard.extend(e.hand)
-        e.hand.clear()
+        e.discard.extend(key for key in e.hand if key != e.held)
+        e.hand = [e.held] if e.held is not None else []
+        e.held, e.hold_used = None, False
         _draw(e, state.seed, state.round_no)
         return "ELEMENT_TURN_ENDED"
     key = action.removeprefix("element_")
@@ -301,6 +338,8 @@ def perform(state, action, expected_round):
     updated, effect = card_effect(e, key)
     updated.hand.remove(key)
     updated.discard.append(key)
+    if updated.held == key:
+        updated.held = None  # 已打出的保留牌不再复制；本回合留牌次数仍然消耗。
     state.elemental = e = updated
     state.score += effect["damage"]
     _record(state, action, points=effect["damage"], **effect,
@@ -324,10 +363,15 @@ def preview(state):
                 "description": (f"{effect['reaction'] or '无反应'}：伤害{effect['damage']}、削盾{effect['barrier_damage']}；治疗{effect['heal']}，护盾→{after.block}。 " if enabled else "能量不足。 ") + card.text,
                 "enabled": enabled, "cost": card.cost, "element": key, "points_awarded": effect.get("damage", 0),
                 "focus_after": after.energy, **effect})
+        if e.edition == 2 and not e.hold_used:
+            options += [{"choice_id": "element_hold_" + key, "title": "留牌 · " + CARDS[key].name,
+                         "description": "本回合限一次，不花能量；这张未使用的牌留到下回合，再抽至4张。若现在打出它，则不再保留。不能带到下一层。",
+                         "enabled": True, "kind": "hold", "cost": 0, "element": key,
+                         "points_awarded": 0, "focus_after": e.energy} for key in e.hand]
         label, incoming = enemy_intent(state)
         projected = max(0, incoming - e.block - e.weaken)
         options.append({"choice_id": "element_end", "title": "结束回合 · 敌方行动",
-            "description": f"持续伤害{e.dot}先结算；若未击败敌人，{label}{incoming}伤，按当前护盾/削弱预计失去{projected}生命。之后弃掉余牌、抽4、能量回3，护盾清零。",
+            "description": f"持续伤害{e.dot}先结算；若未击败敌人，{label}{incoming}伤，按当前护盾/削弱预计失去{projected}生命。之后{'保留已选牌、弃其余，抽至4张' if e.edition==2 else '弃掉余牌、抽4'}，能量回3，护盾清零。",
             "enabled": True, "points_awarded": 0, "focus_after": 3, "cost": 0})
     for row in options:
         row.setdefault("points_awarded", 0)
@@ -342,16 +386,24 @@ def preview(state):
                            "choice": row["text"], "points": row.get("points", 0), "fatal": False, "bonus": 0} for row in e.log[-6:]]}
     label, incoming = enemy_intent(state)
     last = e.log[-1]["text"] if e.log else "七元素已就绪：先看敌人附着和攻击预告，再搭配出牌。"
+    trait = ("反应额外削盾4；攻击循环7/12/20，第7回合起每回合再+2。" if state.round_no==10 else
+             "不攻击；击败额外50分一次。" if state.current_monster.bonus_points else
+             ENEMY_STYLES[state.current_monster.monster_id][2] if e.edition==2 else "初版普通敌人节奏，原规则保持。")
+    forecast = [{"turn": turn, "title": enemy_intent(state, turn)[0], "damage": enemy_intent(state, turn)[1]}
+                for turn in range(e.turn, min(e.turn+3, 13 if state.round_no==10 else 9))] if e.edition==2 and phase=="combat" else []
     return {"ruleset": ELEMENTS_RULESET, "focus": e.energy, "max_focus": ENERGY,
         "stance": "boss" if state.round_no == 10 else "elements", "phase": phase,
         "hint": (f"营地二选一：续航或永久伤害；第十层首领有{BOSS_HP}生命/{BOSS_BARRIER}护盾，反应额外削盾4。" if phase == "camp" else
-                 "每回合抽4、能量3，可连续出不同元素；结束回合才反击。护盾本回合有效，附着跨回合保留。第10层固定首领，无随机即死。"),
+                 ("每回合可留1张牌到下回合；看敌人特性与后续攻击预告，准备连招或防重击。 " if e.edition==2 else "") +
+                 "每回合抽至4、能量3，可连续出不同元素；结束回合才反击。护盾本回合有效，附着跨回合保留。第10层固定首领，无随机即死。"),
         "options": options, "report": report, "chapter": {"index": 4 if state.round_no==10 else (state.round_no-1)//3+1, "total": 4, "title": "七曜终章" if state.round_no==10 else "元素试炼"},
         "blessing_name": None, "blessing_description": None, "blessing_level": None,
         "combo_ready": False, "relics": [], "routes": [], "deck": None,
         "camp_rounds": [4,7,10], "visited_camps": [row["floor"] for row in e.camps],
         "guard_comments": {"venti": last, "varka": "先看预告。冻结/结晶/护盾能少掉血；攒好附着再爆发。" if state.status=="active" else last},
         "elemental": {"hp": e.hp, "max_hp": MAX_HP, "energy": e.energy, "power": e.power,
+            "edition": e.edition, "held": CARDS[e.held].name if e.held else None, "hold_used": e.hold_used,
+            "enemy_trait": None if phase=="camp" else trait, "forecast": forecast,
             "block": e.block, "turn": e.turn, "turn_limit": 12 if state.round_no==10 else 8,
             "enemy_hp": None if phase=="camp" else e.enemy_hp, "enemy_max_hp": None if phase=="camp" else e.enemy_max_hp, "barrier": None if phase=="camp" else e.barrier,
             "aura": ELEMENT_NAMES.get(e.aura, "无"), "cores": e.cores, "dot": e.dot,

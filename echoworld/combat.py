@@ -276,7 +276,7 @@ def start_combat(
     game: GameState,
     seed: int,
     monsters: tuple[Monster, ...] = DEFAULT_MONSTERS,
-    *, ruleset: str = CLASSIC_RULESET,
+    *, ruleset: str = CLASSIC_RULESET, elements_edition: int = 1,
 ) -> CombatState:
     """许可由服务端状态核验，玩家输入不能在这里伪造。"""
 
@@ -289,7 +289,7 @@ def start_combat(
     offers = offer_blessings(seed) if uses_blessing(ruleset) else ()
     state = CombatState(game.player_id, game.world_id, seed, tuple(monsters), ruleset=ruleset,
                         blessing_options=offers, cards=new_deck(seed) if ruleset == CARDS_RULESET else None,
-                        elemental=new_elements(seed) if ruleset == ELEMENTS_RULESET else None)
+                        elemental=new_elements(seed, elements_edition) if ruleset == ELEMENTS_RULESET else None)
     if ruleset == ELEMENTS_RULESET:
         prepare_floor(state)
     else:

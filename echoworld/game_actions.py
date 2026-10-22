@@ -17,6 +17,7 @@ from .elements import ELEMENTS_RULESET, ACTIONS as ELEMENT_ACTIONS, perform as p
 SUCCESS = {"QUEST_ACCEPTED", "TRAINING_HERB_CLAIMED", "COMPLETED", "ENTER_ALLOWED",
            "COMBAT_STARTED", "BLESSING_CHOSEN", "CAMP_CHOSEN", "RELIC_CHOSEN", "ROUTE_CHOSEN", "CARD_DRAFTED", "ROUND_RESOLVED", "PLAYER_DEAD", "TOWER_CLEARED"}
 SUCCESS.update({"ELEMENT_PLAYED", "ELEMENT_TURN_ENDED", "ELEMENT_CAMP_CHOSEN"})
+SUCCESS.add("ELEMENT_HELD")
 
 
 def public_state(game: GameState, combat: CombatState | None) -> dict:
@@ -53,7 +54,7 @@ def apply_action(game: GameState, combat: CombatState | None, action: str,
                     "tower_expedition": EXPEDITION_RULESET, "tower_spire": SPIRE_RULESET,
                     "tower_routes": ROUTES_RULESET, "tower_cards": CARDS_RULESET,
                     "tower_elements": ELEMENTS_RULESET}[action]
-            combat = start_combat(game, seed=seed, ruleset=mode)
+            combat = start_combat(game, seed=seed, ruleset=mode, elements_edition=2)
             code = "COMBAT_STARTED"
             scene = asdict(narrate(combat))
     elif action in ELEMENT_ACTIONS:
