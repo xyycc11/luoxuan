@@ -127,10 +127,12 @@ def visible_packet(game, combat, version, npc_id, goal, question, kind):
             reasons["element_doctrine"] = "营地可放弃回血/加伤，学本局唯一流派：每回合首次反应额外3伤、3盾或返1能量；学后不可更换。"
             if phase == "camp":
                 reasons["element_camp"] = "营地只能领一种：回血12、永久加伤1，或学一种唯一流派；当前可选项以界面为准，不能同时领取。"
+        if e.get("secret") in {"active", "won", "lost"}:
+            reasons["element_boss"] = "隐藏关莎芙210生命/32屏障；5能量、6张手牌、基础伤害+2。第五回合结束仍存活则滑板无视护盾秒杀；先结算持续伤害。"
     return {"kind": kind, "version": version, "ruleset": combat.ruleset, "npc_id": npc_id,
             "npc_name": role.display_name, "goal": GOALS[goal], "question": question,
             "status": combat.status, "round_no": combat.round_no, "phase": phase,
-            "remaining_rounds": 10 - combat.round_no + 1 if combat.status == "active" else 0,
+            "remaining_rounds": max(1, 10 - combat.round_no + 1) if combat.status == "active" else 0,
             "focus": preview["focus"], "blessing": preview["blessing_name"],
             "blessing_level": preview["blessing_level"], "combo_ready": preview["combo_ready"],
             "relics": deepcopy(preview["relics"]),

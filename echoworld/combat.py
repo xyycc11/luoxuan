@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from random import Random
 
 from .state import GameState
-from .elements import ELEMENTS_RULESET, ElementState, new_state as new_elements, prepare_floor
+from .elements import ELEMENTS_RULESET, SECRET_NAME, SECRET_HP, ElementState, new_state as new_elements, prepare_floor
 from .blessings import BLESSINGS, blessing_effect, offer_blessings
 from .expedition import (EXPEDITION_RULESET, CAMP_ROUNDS, CAMP_CHOICES, CAMP_NAMES,
                          MAX_BLESSING_LEVEL, CampEvent, camp_effect, chapter_info, run_report, guard_comments)
@@ -130,10 +130,21 @@ class CombatState:
         if self.ruleset == ELEMENTS_RULESET:
             if not isinstance(self.elemental, ElementState):
                 raise ValueError("element mode requires elemental state")
-            if (type(self.round_no) is not int or not 1 <= self.round_no <= 10
+            e = self.elemental
+            hidden = e.secret in {"active", "won", "lost"}
+            if (type(self.round_no) is not int or not 1 <= self.round_no <= (11 if hidden else 10)
                     or self.status not in {"active", "dead", "cleared"}
-                    or (self.status == "cleared" and (self.round_no != 10 or self.elemental.enemy_hp != 0))):
+                    or (self.status == "cleared" and (self.round_no != (11 if hidden else 10) or e.enemy_hp != 0))):
                 raise ValueError("invalid elemental progress")
+            if hidden and (self.round_no != 11 or self.current_monster is None
+                           or self.current_monster.monster_id != SECRET_NAME
+                           or e.enemy_max_hp != SECRET_HP
+                           or self.status != {"active":"active", "won":"cleared", "lost":"dead"}[e.secret]):
+                raise ValueError("invalid hidden challenge lifecycle")
+            if e.secret in {"offered", "declined"} and (self.status != "cleared" or self.round_no != 10):
+                raise ValueError("invalid hidden invitation")
+            if e.base_clear_hp is not None and (self.round_no < 10 or len(self.events) < 10):
+                raise ValueError("base clear must have ten completed floors")
             if self.elemental.camp_due and self.round_no not in {4, 7, 10}:
                 raise ValueError("invalid elemental camp floor")
             e = self.elemental
@@ -142,7 +153,7 @@ class CombatState:
                     or (self.status == "active" and (e.hp == 0 or e.enemy_hp == 0))):
                 raise ValueError("invalid elemental score or lifecycle")
             if ([row.round_no for row in self.events] != list(range(1, len(self.events)+1))
-                    or len(self.events) != (10 if self.status == "cleared" else self.round_no-1)):
+                    or len(self.events) != (self.round_no if self.status == "cleared" else self.round_no-1)):
                 raise ValueError("invalid elemental completed floors")
             expected_camp = (self.status == "active" and self.round_no in {4,7,10}
                              and not any(row["floor"] == self.round_no for row in e.camps))

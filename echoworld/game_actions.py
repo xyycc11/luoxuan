@@ -20,6 +20,7 @@ SUCCESS.update({"ELEMENT_PLAYED", "ELEMENT_TURN_ENDED", "ELEMENT_CAMP_CHOSEN"})
 SUCCESS.add("ELEMENT_HELD")
 SUCCESS.add("ELEMENT_PARRIED")
 SUCCESS.add("TRAVELER_SELECTED")
+SUCCESS.update({"SECRET_ENTERED", "SECRET_DECLINED", "SECRET_CLEARED"})
 
 
 def public_state(game: GameState, combat: CombatState | None) -> dict:
@@ -64,7 +65,7 @@ def apply_action(game: GameState, combat: CombatState | None, action: str,
                     "tower_expedition": EXPEDITION_RULESET, "tower_spire": SPIRE_RULESET,
                     "tower_routes": ROUTES_RULESET, "tower_cards": CARDS_RULESET,
                     "tower_elements": ELEMENTS_RULESET}[action]
-            combat = start_combat(game, seed=seed, ruleset=mode, elements_edition=3)
+            combat = start_combat(game, seed=seed, ruleset=mode, elements_edition=4)
             code = "COMBAT_STARTED"
             scene = asdict(narrate(combat))
     elif action in ELEMENT_ACTIONS:

@@ -45,6 +45,14 @@
 <div class="adventure-content">
 <div class="section-heading"><div><p class="eyebrow">THE JOURNEY / 本次旅程</p><h2>循着风的方向</h2></div><span class="tag" id="modeTag">旅程准备</span></div>
 <div id="actions">
+<dialog id="secretOffer" class="traveler-picker" aria-labelledby="secretOfferTitle">
+<img src="/assets/characters/venti.jpg" class="secret-venti" alt="温迪向你发出邀请">
+<h2 id="secretOfferTitle">温迪的隐藏邀请</h2><p id="secretInvitation"></p>
+<p>莎芙（龙龙最可爱）：210生命、32屏障。旅人每回合5能量、抽至6张、基础伤害额外+2。第5回合结束Boss未倒下，则滑板无视护盾秒杀。原十层通关保留。</p>
+<label><input id="secretMusicConsent" type="checkbox" checked>进入时播放阿黛《雨爱》DJ背景音乐（可关闭）</label>
+<div class="quest-actions"><button data-action="element_secret_enter">是 · 进入隐藏关卡</button><button data-action="element_secret_decline" class="secondary">否 · 保留胜利</button></div>
+<button id="secretRecover" type="button" class="secondary" hidden>查询刚才的选择</button>
+</dialog>
 <details id="permitPanel" class="permit-panel" open><summary>入塔委托 <span>取得许可后，选择你的试炼</span></summary>
 <div id="questChecklist" class="quest-steps" aria-label="许可任务进度"></div>
 <div class="quest-actions"><button data-action="accept">接受任务</button><button data-action="claim">领取herb</button><button data-action="submit">交付herb</button><button data-action="enter">核验许可</button></div>
@@ -64,7 +72,14 @@
 <progress id="battleProgress" value="0" max="10" aria-label="已完成试炼轮数"></progress>
 <div class="stats"><div class="stat"><small>当前分数</small><strong id="scoreValue">—</strong></div><div class="stat"><small id="energyLabel">可用专注</small><strong id="focusValue">—</strong></div><div class="stat"><small>旅程章节</small><strong id="chapterValue">准备</strong></div></div>
 <p id="battleFocus">先完成许可任务。</p><p id="blessingSummary"></p><p id="battleHint"></p>
+<label class="quiet-note"><input id="cardFxEnabled" type="checkbox" checked>抽牌与出牌特效（遵循系统减少动态效果设置）</label>
 <section id="elementPanel" class="element-panel" hidden aria-label="七元素战况"></section>
+<section id="secretMusic" class="secret-music" hidden aria-label="隐藏关音乐">
+<strong>阿黛《雨爱》DJ · 纯背景音乐</strong><p id="secretMusicStatus" class="quiet-note">进入时尝试自动播放；浏览器拦截时点播放。音乐不影响战斗结算。</p>
+<audio id="secretAudio" controls loop preload="none" aria-label="隐藏关背景音乐"></audio>
+<button id="secretMusicPlay" type="button" class="secondary">播放音乐</button><button id="secretMusicStop" type="button" class="secondary">关闭音乐</button>
+<label class="quiet-note">也可选择本机音频（仅浏览器读取，不上传）：<input id="secretMusicFile" type="file" accept="audio/mpeg,audio/mp4,audio/ogg,audio/wav,.mp3,.m4a,.ogg,.wav"></label>
+</section>
 <section id="relicPanel" class="relic-panel" hidden aria-label="本局遗物构筑"><div class="route-heading"><strong>本局遗物</strong><small>触发效果已计入下方选项</small></div><div id="relicInventory" class="relic-inventory"></div></section>
 <section id="chapterRoutes" class="chapter-routes" hidden aria-label="章节路线与挑战进度"><div class="route-heading"><strong>章节路线</strong><small>只计本章 · 不改变生存概率</small></div><div id="routeContracts"></div></section>
 <section id="deckPanel" class="deck-panel" hidden aria-label="本局战术牌组"><div class="route-heading"><strong>本局牌组</strong><small id="deckCounts"></small></div><p class="quiet-note">每轮3张手牌，选1张完成遭遇；其余一起弃置。相同手牌合并显示，不能连续打出多张。</p><details><summary>查看完整牌组 · 不含抽牌顺序</summary><div id="deckComposition"></div></details></section>
@@ -120,16 +135,19 @@
 <pre id="shareStatus"></pre><div id="myCandidates"></div><div id="publicFaq"></div></details></section>
 </main>
 <footer>EchoWorld · 原神世界观同人学习项目，非官方内容。角色与怪物美术版权归原权利方，素材来源见项目说明；原背景沿用既有插画。<span>下一阵风，仍由你选择方向。</span></footer>
+<script src="/assets/card-fx.js"></script>
 <script>
 let currentState = null;
 let isBusy = false;
 let aiBusy=false,aiAvailable=false,aiProposal=null,aiLastRequest=null,aiNonce=0;
+let secretAudioObjectUrl=null,secretAudioPlayer=null;
 const TRAVELER_ART={aether:'/assets/characters/aether.jpg',lumine:'/assets/characters/lumine.jpg'};
 const GUARD_ART={venti:'/assets/characters/venti.jpg',varka:'/assets/characters/varka.jpg'};
 const MONSTER_ART={
   '丘丘人':'hilichurl.png','木盾丘丘暴徒':'wooden-mitachurl.png','火史莱姆':'pyro-slime.png',
   '风丘丘萨满':'anemo-samachurl.png','遗迹守卫':'ruin-guard.png','大伟丘':'unusual-hilichurl.png',
-  '遗迹重机':'ruin-grader.png','深渊咏者':'abyss-lector.png','深渊咏者 · 七曜试炼':'abyss-lector.png'
+  '遗迹重机':'ruin-grader.png','深渊咏者':'abyss-lector.png','深渊咏者 · 七曜试炼':'abyss-lector.png',
+  '莎芙（龙龙最可爱）':'shafu.jpg'
 };
 const el = id => document.getElementById(id);
 const pendingKey = () => 'echoworld:pending:' + el('player').value;
@@ -150,13 +168,14 @@ function updateActionButtons(){
     tower_elements:Boolean(state?.has_permit)&&!combat,
     strike:active&&(combat.options||[]).some(option=>option.choice_id==='strike'),
     guard:active&&(combat.options||[]).some(option=>option.choice_id==='guard')};
-  for(const option of combat?.options||[])allowed[option.choice_id]=active&&option.enabled!==false;
-  document.querySelectorAll('#actions button').forEach(button=>{
+  for(const option of combat?.options||[])allowed[option.choice_id]=(active||combat.phase==='secret_offer')&&option.enabled!==false;
+  document.querySelectorAll('#actions button[data-action]').forEach(button=>{
     button.disabled=isBusy||pending||!state||!state.traveler||!allowed[button.dataset.action];
     button.title=pending?'请先查询/恢复未确认请求。':(!allowed[button.dataset.action]?'当前状态不允许这个动作。':'');
   });
   document.querySelectorAll('#travelerChoices button').forEach(button=>button.disabled=isBusy||pending||!state);
   el('travelerRecover').hidden=!pending;el('travelerRecover').disabled=isBusy;
+  el('secretRecover').hidden=!pending;el('secretRecover').disabled=isBusy;
 }
 function busy(on){
   isBusy=on;
@@ -166,6 +185,16 @@ function busy(on){
   updateAIControls();
 }
 function displayBattle(combat){
+  const offer=el('secretOffer'),invited=combat?.phase==='secret_offer';
+  if(invited){el('secretInvitation').textContent=combat.hint;if(!offer.open)offer.showModal()}
+  else if(offer.open)offer.close();
+  const secretActive=combat?.elemental?.secret==='active';
+  el('secretMusic').hidden=!secretActive;
+  if(!secretActive||secretAudioPlayer!==el('player').value){
+    el('secretAudio').pause();el('secretAudio').removeAttribute('src');el('secretAudio').load();
+    if(secretAudioObjectUrl){URL.revokeObjectURL(secretAudioObjectUrl);secretAudioObjectUrl=null}
+    el('secretMusicFile').value='';secretAudioPlayer=null;
+  }
   const art=MONSTER_ART[combat?.monster_id];
   const showEnemy=Boolean(art&&combat&&(combat.phase==='combat'||combat.status!=='active'));
   el('enemyArt').hidden=!showEnemy;
@@ -218,7 +247,7 @@ function displayBattle(combat){
   el('combatActions').hidden=!combat||combat.status!=='active'||combat.phase!=='combat'||Boolean(combat.deck);
   el('route').replaceChildren();
   const resolved=combat?.report?.completed_rounds??(combat?combat.round_no-1:0);
-  for(let number=1;number<=10;number++){
+  for(let number=1;number<=(combat?.round_no===11?11:10);number++){
     const node=document.createElement('div');node.className='route-node';node.textContent=String(number);
     const checkpoint=(combat?.camp_rounds||[]).includes(number);
     if(number<=resolved)node.classList.add('done');
@@ -280,6 +309,7 @@ function displayBattle(combat){
       const effect=document.createElement('span');effect.textContent=option.description;
       button.append(meta,title,effect);el('cardHand').append(button);
     }
+    window.EchoCardFX?.deal(el('cardHand'),`${el('player').value}:${combat.round_no}:${combat.phase}`);
   }
   for(const option of choosing||combat.deck?[]:(combat.options||[])){
     const button=option.choice_id==='strike'?el('strikeButton'):el('guardButton');
@@ -310,10 +340,11 @@ function displayElements(combat){
   const e=combat.elemental,active=combat.status==='active',panel=el('elementPanel');
   el('modeTag').textContent='七元素 · 七曜试炼';
   el('combatActions').hidden=true;
-  el('battleStatus').textContent=`${active?'进行中':combat.status==='cleared'?'首领击败 · 通关':'本局止步'} · 第${combat.round_no}/10层${combat.monster_id?' · '+combat.monster_id:''}`;
+  el('battleStatus').textContent=`${e.secret==='offered'?'十层通关 · 温迪邀请':active?'进行中':e.secret==='won'?'隐藏关通关':e.secret==='lost'?'隐藏关止步 · 十层已通关':combat.status==='cleared'?'首领击败 · 通关':'本局止步'} · ${combat.round_no===11?'隐藏终关':`第${combat.round_no}/10层`}${combat.monster_id?' · '+combat.monster_id:''}`;
+  el('battleProgress').max=combat.round_no===11?11:10;
   el('battleProgress').value=combat.report.completed_rounds;
-  el('focusValue').textContent=`${e.energy}/3`;
-  el('battleFocus').textContent=`回合${e.turn}/${e.turn_limit} · 共鸣Lv.${e.power} · 能量${e.energy}/3`;
+  el('focusValue').textContent=`${e.energy}/${e.max_energy||3}`;
+  el('battleFocus').textContent=`回合${e.turn}/${e.turn_limit} · 共鸣Lv.${e.power} · 能量${e.energy}/${e.max_energy||3} · 手牌${e.hand_count}/${e.max_hand||4}${e.damage_buff?' · 隐藏祝福伤害+'+e.damage_buff:''}`;
   el('battleHint').textContent=combat.hint;
   const meters=document.createElement('div');meters.className='element-meters';
   for(const [label,value,max] of [['旅人生命',e.hp,e.max_hp],['敌人生命',e.enemy_hp,e.enemy_max_hp]]){
@@ -326,7 +357,7 @@ function displayElements(combat){
     ?(e.edition>=3&&!e.doctrine?'出发前选择一次：回血、提高伤害，或放弃两者学习一种本局流派。':'出发前选择一次：回复生命，或提高七张牌的基础伤害。')
     :`旅人护盾 ${e.block} · 敌人屏障 ${e.barrier} · 元素附着【${e.aura}】 · 草原核 ${e.cores} · 持续伤害 ${e.dot} · 下张额外伤害 ${e.next_bonus}`;
   const intent=document.createElement('p');intent.className='element-intent';intent.textContent=active&&combat.phase==='combat'
-    ?`敌方预告：${e.intent} ${e.incoming}伤 · 削弱${e.weaken} · 当前预计失去${Math.max(0,e.incoming-e.weaken-e.block)}生命`
+    ?e.secret==='active'&&e.turn===5?'最后机会：本回合结束先结算持续伤害；莎芙仍存活则滑板秒杀，无视护盾与削弱。':`敌方预告：${e.intent} ${e.incoming}伤 · 削弱${e.weaken} · 当前预计失去${Math.max(0,e.incoming-e.weaken-e.block)}生命`
     :active?'休整不会消耗战斗回合，敌人尚未揭晓。':'结局已保存，不再出牌。';
   const last=document.createElement('p');last.className='element-last';last.textContent=e.last;
   panel.append(details,intent,last);
@@ -362,11 +393,13 @@ function displayElements(combat){
   }
   if(holdChoices)el('cardHand').append(holdChoices);
   if(parryChoices)el('cardHand').append(parryChoices);
+  window.EchoCardFX?.deal(el('cardHand'),`${el('player').value}:${combat.round_no}:${e.turn}:${combat.phase}`);
   if(!active){
     el('runSummary').hidden=false;
     const h=document.createElement('h3');h.textContent=combat.status==='cleared'?'七曜终章 · 首领击败':'此程止步 · 保留战斗记录';
-    const p=document.createElement('p');p.textContent=`完成${combat.report.completed_rounds}/10层 · ${combat.score}分 = 有效生命伤害${combat.report.normal_points} + 大伟丘奖励${combat.report.rare_points}；触发反应${combat.report.reactions}次。`;
+    const p=document.createElement('p');p.textContent=`完成${combat.report.completed_rounds}/${combat.round_no===11?11:10}层 · ${combat.score}分 = 有效生命伤害${combat.report.normal_points} + 大伟丘奖励${combat.report.rare_points}；触发反应${combat.report.reactions}次。${e.base_cleared?'原十层通关记录已保留。':''}`;
     el('runSummary').append(h,p);
+    for(const name of combat.report.badges){const badge=document.createElement('span');badge.className='badge';badge.textContent=name;el('runSummary').append(badge)}
   }
 }
 function displayGuardComment(combat){
@@ -482,7 +515,17 @@ el('aiConfirm').onclick=()=>run(async()=>{
   el('aiOutput').textContent=result.ok?'已通过原动作流程提交这项建议；没有自动执行后续动作。请按当前局面重新提问。':'建议未执行，请核对当前场景和规则提示。';
 });
 async function showAction(result){
+  const previous=currentState;
+  let pendingAction=null;
+  try{const pending=JSON.parse(localStorage.getItem(pendingKey())||'null');
+    if(pending?.body?.request_id===result.request_id)pendingAction=pending.body.action;
+  }catch(error){/* 恢复标记异常不能影响已提交业务。 */}
+  const option=previous?.combat?.options?.find(row=>row.choice_id===pendingAction);
+  const cardEffect=window.EchoCardFX?.capture(pendingAction,option);
+  window.EchoCardFX?.cleanup();
   forget();await refresh();
+  window.EchoCardFX?.resolve(result,cardEffect,previous);
+  if(result.code==='SECRET_ENTERED'&&currentState?.combat?.elemental?.secret==='active'&&el('secretMusicConsent').checked&&!el('secretAudio').getAttribute('src'))playSecretMusic();
     const titles={QUEST_ACCEPTED:'委托已接受 · 先准备一份herb。',TRAINING_HERB_CLAIMED:'教学herb已领取 · 可以交付。',COMPLETED:'许可已获得 · 选择你的试炼。',ENTER_ALLOWED:'许可核验通过。',COMBAT_STARTED:'旅程开始。',BLESSING_CHOSEN:'符文已选择。',CAMP_CHOSEN:'营地选择已记录。',RELIC_CHOSEN:'遗物已收下 · 下一轮开始产生联动。',ROUTE_CHOSEN:'章节路线已选 · 按本章目标前进。',ROUND_RESOLVED:'这一轮，风记住了你的选择。',PLAYER_DEAD:'本次试炼止步。',TOWER_CLEARED:'十轮远行，抵达塔顶。'};
   titles.CARD_DRAFTED='营地选牌已记录 · 下一手已准备。';
   titles.ELEMENT_PLAYED='元素牌已结算 · 可以继续搭配，或结束回合。';
@@ -491,6 +534,9 @@ async function showAction(result){
   titles.ELEMENT_HELD='留牌已记录 · 结束回合后保留，不会立即抽牌。';
   titles.ELEMENT_PARRIED='招架已结算 · 本回合获得护盾，留牌/招架机会已用。';
   titles.TRAVELER_SELECTED='旅人已选择并保存 · 现在可以开始旅程。';
+  titles.SECRET_ENTERED='温迪：意气风发啊旅行者。';
+  titles.SECRET_DECLINED='温迪：那就让风记住这次胜利吧。';
+  titles.SECRET_CLEARED='莎芙已被击败 · 龙龙隐藏终章通关！';
   el('scene').textContent=titles[result.code]||`动作未完成：${result.code}\n${result.rule_reply||''}`;
   if(result.scene){
     let scene=result.scene;
@@ -514,6 +560,25 @@ el('guardPortraitChoices').onclick=event=>{
   el('npc').value=button.dataset.npc;el('npc').dispatchEvent(new Event('change'));
 };
 el('travelerPicker').addEventListener('cancel',event=>event.preventDefault());
+el('secretOffer').addEventListener('cancel',event=>event.preventDefault());
+el('secretRecover').onclick=()=>el('recover').click();
+async function playSecretMusic(){
+  if(currentState?.combat?.elemental?.secret!=='active')return;
+  const audio=el('secretAudio');secretAudioPlayer=el('player').value;
+  if(!audio.getAttribute('src'))audio.src='/assets/audio/yuai-adai-dj.mp3';
+  audio.volume=0.35;
+  try{await audio.play();el('secretMusicStatus').textContent='阿黛《雨爱》DJ播放中；可调音量或关闭。'}
+  catch(error){el('secretMusicStatus').textContent=error.name==='NotAllowedError'?'浏览器拦截自动播放，请点“播放音乐”。':'音频尚不可用，可选择本机MP3/M4A；不影响隐藏挑战。'}
+}
+el('secretMusicPlay').onclick=playSecretMusic;
+el('secretMusicStop').onclick=()=>{el('secretAudio').pause();el('secretMusicStatus').textContent='音乐已关闭。'};
+el('cardFxEnabled').onchange=()=>{if(!el('cardFxEnabled').checked)window.EchoCardFX?.cleanup()};
+el('secretMusicFile').onchange=()=>{
+  const file=el('secretMusicFile').files[0];if(!file)return;
+  if(file.size>30*1024*1024){el('secretMusicStatus').textContent='请选择30MB以内的音频。';return}
+  if(secretAudioObjectUrl)URL.revokeObjectURL(secretAudioObjectUrl);
+  secretAudioObjectUrl=URL.createObjectURL(file);el('secretAudio').src=secretAudioObjectUrl;playSecretMusic();
+};
 el('travelerRecover').onclick=()=>el('recover').click();
 el('travelerChoices').onclick=event=>{
   const button=event.target.closest('button[data-traveler]');if(!button||button.disabled)return;
@@ -534,7 +599,7 @@ el('actions').onclick=event=>{
     if(localStorage.getItem(pendingKey()))throw Error('有结果未确认的请求，请先点“查询/恢复未确认请求”。');
     const body={action,request_id:crypto.randomUUID(),expected_version:currentState.version};
     if(action==='strike'||action==='guard'||action.startsWith('element_')||action.startsWith('boon_')||action.startsWith('camp_')||action.startsWith('relic_')||action.startsWith('route_')||action.startsWith('card_')||action.startsWith('draft_')){
-      if(!currentState?.combat||currentState.combat.status!=='active')throw Error('没有进行中的战斗。');
+      if(!currentState?.combat||(currentState.combat.status!=='active'&&currentState.combat.phase!=='secret_offer'))throw Error('没有进行中的战斗或邀请。');
       body.expected_round=currentState.combat.round_no;
     }
     remember('action',body);

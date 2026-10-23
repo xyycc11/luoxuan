@@ -15,6 +15,8 @@
 
 ## 怪物
 
+2026-10-23新增`monsters/shafu.jpg`：用户本轮提供的莎芙头像，原文件直接复制，不生成、不重绘。附件原名`codex-clipboard-4e414f8a-7932-4be5-9b69-8855a6c4030d.jpg`；“莎芙（龙龙最可爱）”及滑板秒杀为项目原创同人设定，不冒充官方剧情。图片权利仍归原作者/权利方，项目代码许可不覆盖它。
+
 八张均为游戏内怪物图标，256×256原图，不使用生成怪物。数据名来自[genshin-db图片索引](https://github.com/theBowja/genshin-db/blob/main/src/data/image/enemies.json)，原图由[Yatta](https://gi.yatta.moe/)托管。
 
 | 文件 | 游戏资源标识 |

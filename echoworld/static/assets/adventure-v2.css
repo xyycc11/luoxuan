@@ -63,3 +63,9 @@ h1,h2,h3,p{margin-top:0}h1,h2,h3{font-family:var(--serif);font-weight:600}h1{fon
 .enemy-art{display:flex;justify-content:center;align-items:center;margin:12px 0 18px;min-height:150px;border-radius:16px;background:radial-gradient(ellipse,#e5dcc4aa,transparent 70%)}
 .enemy-art img{display:block;width:180px;height:180px;object-fit:contain;filter:drop-shadow(0 10px 10px #3f342322)}
 @media(max-width:700px){.traveler-picker{padding:18px}.traveler-picker h2{font-size:23px}.traveler-choices{gap:12px}.traveler-choices img{height:230px}.traveler-art{max-width:140px}.traveler-art img{height:170px}.guard-art{max-height:300px}.enemy-art img{width:150px;height:150px}}
+.secret-venti{display:block;width:100%;max-height:180px;object-fit:cover;object-position:center 30%;border-radius:14px}
+.secret-music{margin:16px 0;padding:12px;border:1px solid #bb9868;border-radius:12px}
+.secret-music audio{display:block;width:100%;margin:10px 0}
+.card-fx-ghost{position:fixed;z-index:60;pointer-events:none;width:140px;min-height:100px;padding:18px;display:grid;place-items:center;border:2px solid var(--fx-color);border-radius:14px;background:linear-gradient(145deg,#fffaee,#e5dac5);color:#453c30;font:600 18px/1.5 var(--serif);box-shadow:0 0 28px var(--fx-color);text-align:center}
+.card-fx-hit{position:fixed;z-index:61;pointer-events:none;width:90px;height:90px;border:4px solid var(--fx-color);border-radius:50%;background:radial-gradient(circle,#fff9,var(--fx-color) 20%,transparent 65%);box-shadow:0 0 30px var(--fx-color)}
+@media(prefers-reduced-motion:reduce){.card-fx-ghost,.card-fx-hit{display:none!important}}

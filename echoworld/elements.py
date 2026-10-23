@@ -12,6 +12,10 @@ MAX_HP = 44
 ENERGY = 3
 BOSS_HP = 90
 BOSS_BARRIER = 20
+SECRET_NAME = "莎芙（龙龙最可爱）"
+SECRET_HP, SECRET_BARRIER = 210, 32
+SECRET_ENERGY, SECRET_HAND, SECRET_POWER = 5, 6, 2
+SECRET_ACTIONS = ("element_secret_enter", "element_secret_decline")
 ELEMENT_NAMES = {"pyro": "火", "hydro": "水", "electro": "雷", "cryo": "冰",
                  "dendro": "草", "anemo": "风", "geo": "岩"}
 
@@ -45,7 +49,7 @@ DOCTRINES = {
 }
 DOCTRINE_ACTIONS = tuple("element_doctrine_" + key for key in DOCTRINES)
 CAMP_ACTIONS = ("element_rest", "element_attune") + DOCTRINE_ACTIONS
-ACTIONS = tuple("element_" + key for key in DECK) + HOLD_ACTIONS + PARRY_ACTIONS + ("element_end",) + CAMP_ACTIONS
+ACTIONS = tuple("element_" + key for key in DECK) + HOLD_ACTIONS + PARRY_ACTIONS + ("element_end",) + CAMP_ACTIONS + SECRET_ACTIONS
 ENEMY_STYLES = {
     "丘丘人": ("疾攻", (4, 4, 7), "连续快攻；适合用冻结或结晶稳住节奏。"),
     "木盾丘丘暴徒": ("盾击", (3, 5, 8), "开场6屏障；反应额外削盾4，破盾削弱下一击4。"),
@@ -102,10 +106,19 @@ class ElementState:
     # 第三版才允许营地学习一种流派；触发次数在本回合内保存。
     doctrine: str | None = None
     doctrine_used: bool = False
+    # 第四版隐藏挑战。十层结算血量单独保存，不因后续治疗重新解锁。
+    secret: str = "none"
+    base_clear_hp: int | None = None
 
     def __post_init__(self):
-        if type(self.edition) is not int or self.edition not in {1, 2, 3}:
+        if type(self.edition) is not int or self.edition not in {1, 2, 3, 4}:
             raise ValueError("invalid elemental edition")
+        if self.secret not in {"none", "offered", "declined", "active", "won", "lost"}:
+            raise ValueError("invalid secret challenge")
+        if self.base_clear_hp is not None and (type(self.base_clear_hp) is not int or not 1 <= self.base_clear_hp <= MAX_HP):
+            raise ValueError("invalid base clear hp")
+        if self.secret != "none" and (self.edition < 4 or self.base_clear_hp is None or self.base_clear_hp <= 30):
+            raise ValueError("secret requires qualified fourth-edition clear")
         if type(self.hold_used) is not bool:
             raise ValueError("invalid hold usage")
         if self.held is not None and (type(self.held) is not str or self.held not in self.hand or not self.hold_used):
@@ -118,9 +131,10 @@ class ElementState:
             raise ValueError("invalid doctrine trigger")
         if self.edition < 3 and (self.doctrine is not None or self.doctrine_used):
             raise ValueError("old editions cannot learn doctrines")
-        bounds = {"hp": (0, MAX_HP), "energy": (0, ENERGY), "block": (0, 30),
-                  "power": (0, 3), "turn": (1, 12), "enemy_hp": (0, BOSS_HP),
-                  "enemy_max_hp": (12, BOSS_HP), "barrier": (0, BOSS_BARRIER), "cores": (0, 2),
+        hidden = self.secret in {"active", "won", "lost"}
+        bounds = {"hp": (0, MAX_HP), "energy": (0, SECRET_ENERGY if hidden else ENERGY), "block": (0, 30),
+                  "power": (0, 3), "turn": (1, 5 if hidden else 12), "enemy_hp": (0, SECRET_HP if hidden else BOSS_HP),
+                  "enemy_max_hp": (12, SECRET_HP if hidden else BOSS_HP), "barrier": (0, SECRET_BARRIER if hidden else BOSS_BARRIER), "cores": (0, 2),
                   "dot": (0, 3), "weaken": (0, 6), "next_bonus": (0, 3), "shuffles": (1, 200)}
         for key, (low, high) in bounds.items():
             value = getattr(self, key)
@@ -133,18 +147,18 @@ class ElementState:
         if any(not isinstance(pile, list) or any(type(k) is not str or k not in CARDS for k in pile)
                for pile in (self.hand, self.draw, self.discard)):
             raise ValueError("invalid elemental piles")
-        if len(self.hand) > 4 or Counter(self.hand + self.draw + self.discard) != Counter(DECK):
+        if len(self.hand) > (SECRET_HAND if hidden else 4) or Counter(self.hand + self.draw + self.discard) != Counter(DECK):
             raise ValueError("element cards must conserve exactly seven unique cards")
         if (not isinstance(self.log, list) or len(self.log) > 600 or any(not isinstance(x, dict) for x in self.log)
                 or not isinstance(self.camps, list) or len(self.camps) > 3):
             raise ValueError("invalid elemental history")
         for row in self.log:
             if (not {"floor", "turn", "action", "text", "points"} <= row.keys()
-                    or type(row["floor"]) is not int or not 1 <= row["floor"] <= 10
+                    or type(row["floor"]) is not int or not 1 <= row["floor"] <= (11 if self.edition >= 4 else 10)
                     or type(row["turn"]) is not int or not 1 <= row["turn"] <= 12
                     or row["action"] not in (*ACTIONS, "rare_reward", "defeat")
                     or type(row["text"]) is not str or len(row["text"]) > 300
-                    or type(row["points"]) is not int or not 0 <= row["points"] <= BOSS_HP):
+                    or type(row["points"]) is not int or not 0 <= row["points"] <= SECRET_HP):
                 raise ValueError("invalid elemental log entry")
         for row in self.camps:
             if (not isinstance(row, dict) or set(row) != {"floor", "action"}
@@ -162,8 +176,16 @@ class ElementState:
             raise ValueError("doctrine must match exactly one earned camp choice")
 
 
+def energy_cap(e):
+    return SECRET_ENERGY if e.secret in {"active", "won", "lost"} else ENERGY
+
+
+def hand_cap(e):
+    return SECRET_HAND if e.secret in {"active", "won", "lost"} else 4
+
+
 def _draw(e, seed, floor):
-    while len(e.hand) < 4:
+    while len(e.hand) < hand_cap(e):
         if not e.draw:
             e.draw, e.discard = e.discard, []
             Random(f"elements:{seed}:{floor}:{e.shuffles}").shuffle(e.draw)
@@ -215,6 +237,8 @@ def enemy_intent(state, turn=None):
     turn = e.turn if turn is None else turn
     if state.current_monster.bonus_points:
         return "友好展示", 0
+    if e.secret in {"active", "won", "lost"}:
+        return ("滑板状态 · 无视护盾秒杀", MAX_HP) if turn >= 5 else ("龙龙突袭", (8, 12, 16, 20)[turn-1])
     if state.round_no == 10:
         name, amount = (("试探斩", 7), ("深渊冲击", 12), ("蓄力重击", 20))[(turn - 1) % 3]
         return name, amount + max(0, turn - 6) * 2
@@ -256,7 +280,7 @@ def card_effect(e, key):
         reaction = "扩散" if key == "anemo" else "结晶"
         extra = 3 if key == "anemo" else 1
         if key == "anemo":
-            e.energy = min(ENERGY, e.energy + 1)
+            e.energy = min(energy_cap(e), e.energy + 1)
         else:
             e.block = min(30, e.block + 4)
     elif key not in {"anemo", "geo"}:
@@ -279,8 +303,9 @@ def card_effect(e, key):
         doctrine_trigger = e.doctrine
         if e.doctrine == "assault": extra += 3
         if e.doctrine == "bastion": e.block = min(30, e.block + 3)
-        if e.doctrine == "flow": e.energy = min(ENERGY, e.energy + 1)
-    hp_damage, shield_damage = _damage(e, card.damage + e.power + old_bonus + extra, bool(reaction))
+        if e.doctrine == "flow": e.energy = min(energy_cap(e), e.energy + 1)
+    buff = SECRET_POWER if e.secret in {"active", "won", "lost"} else 0
+    hp_damage, shield_damage = _damage(e, card.damage + e.power + buff + old_bonus + extra, bool(reaction))
     return e, {"reaction": reaction, "damage": hp_damage, "barrier_damage": shield_damage,
                "heal": heal, "block_after": e.block, "energy_after": e.energy,
                "bonus_damage": extra, "aura_after": e.aura, "doctrine_trigger": doctrine_trigger}
@@ -306,7 +331,14 @@ def _finish_floor(state):
                                   points, "rare" if rare else "opening"))
     if state.round_no == 10:
         state.status = "cleared"
+        if e.edition >= 4:
+            e.base_clear_hp = e.hp
+            if e.hp > 30:
+                e.secret = "offered"
         return "TOWER_CLEARED"
+    if state.round_no == 11:
+        e.secret, state.status = "won", "cleared"
+        return "SECRET_CLEARED"
     state.round_no += 1
     prepare_floor(state)
     return "ROUND_RESOLVED"
@@ -314,6 +346,8 @@ def _finish_floor(state):
 
 def perform(state, action, expected_round):
     """只有玩家确认的动作能进来；返回码，失败绝不修改任何状态。"""
+    if state.ruleset == ELEMENTS_RULESET and action in SECRET_ACTIONS:
+        return choose_secret(state, action, expected_round)
     if state.status != "active": return "COMBAT_FINISHED"
     if type(expected_round) is not int or expected_round != state.round_no: return "STALE_ROUND"
     if state.ruleset != ELEMENTS_RULESET: return "ELEMENTS_NOT_SUPPORTED"
@@ -367,16 +401,18 @@ def perform(state, action, expected_round):
             _record(state, action, points=damage, text=f"持续伤害{damage}，敌人被击败，不再反击。")
             return _finish_floor(state)
         label, incoming = enemy_intent(state)
-        actual = max(0, incoming - e.weaken - e.block)
+        skateboard = e.secret == "active" and e.turn == 5
+        actual = e.hp if skateboard else max(0, incoming - e.weaken - e.block)
         e.hp = max(0, e.hp - actual)
-        limit = 12 if state.round_no == 10 else 8
+        limit = 5 if e.secret == "active" else 12 if state.round_no == 10 else 8
         _record(state, action, points=damage, hp_lost=actual, text=f"{label}预告{incoming}，削弱{e.weaken}、护盾{e.block}，实际失去{actual}生命；持续伤害{damage}。")
         if e.hp == 0 or e.turn >= limit:
             state.status = "dead"
-            _record(state, "defeat", points=0, text="生命耗尽，试炼结束。" if e.hp == 0 else f"超过{limit}回合时限，撤离试炼；不是直接致死。")
+            if e.secret == "active": e.secret = "lost"
+            _record(state, "defeat", points=0, text="莎芙进入滑板状态，无视护盾与削弱秒杀！隐藏挑战失败，原十层通关记录保留。" if skateboard else "生命耗尽，试炼结束。" if e.hp == 0 else f"超过{limit}回合时限，撤离试炼；不是直接致死。")
             return "PLAYER_DEAD"
         e.turn += 1
-        e.energy, e.block, e.weaken = ENERGY, 0, 0
+        e.energy, e.block, e.weaken = energy_cap(e), 0, 0
         e.discard.extend(key for key in e.hand if key != e.held)
         e.hand = [e.held] if e.held is not None else []
         e.held, e.hold_used = None, False
@@ -399,11 +435,42 @@ def perform(state, action, expected_round):
     return _finish_floor(state) if e.enemy_hp == 0 else "ELEMENT_PLAYED"
 
 
+def choose_secret(state, action, expected_round):
+    """邀请只由十层规则产生，显式选择一次；不解析聊天或开放模型写工具。"""
+    e = state.elemental
+    if type(expected_round) is not int or expected_round != state.round_no: return "STALE_ROUND"
+    if (e is None or e.edition < 4 or state.status != "cleared" or state.round_no != 10
+            or e.secret != "offered" or e.base_clear_hp is None or e.base_clear_hp <= 30):
+        return "SECRET_NOT_OFFERED"
+    if action == "element_secret_decline":
+        e.secret = "declined"
+        _record(state, action, points=0, text="温迪：那就让风记住这次胜利吧。已保留十层通关，隐藏邀请关闭。")
+        return "SECRET_DECLINED"
+    from .combat import Monster
+    e.secret, state.status, state.round_no = "active", "active", 11
+    state.current_monster = Monster(SECRET_NAME)
+    e.enemy_hp = e.enemy_max_hp = SECRET_HP
+    e.barrier, e.energy, e.turn, e.block = SECRET_BARRIER, SECRET_ENERGY, 1, 0
+    e.aura, e.cores, e.dot, e.weaken, e.next_bonus = None, 0, 0, 0, 0
+    e.held, e.hold_used, e.doctrine_used, e.camp_due = None, False, False, False
+    e.discard.extend(e.hand)
+    e.hand.clear()
+    _draw(e, state.seed, 11)
+    _record(state, action, points=0, text="温迪：意气风发啊旅行者。隐藏挑战开始！每回合5能量、抽至6张、基础伤害+2；第5回合结束前击败莎芙，否则滑板秒杀。")
+    return "SECRET_ENTERED"
+
+
 def preview(state):
     e = state.elemental
-    phase = "finished" if state.status != "active" else "camp" if e.camp_due else "combat"
+    phase = "secret_offer" if e.secret == "offered" else "finished" if state.status != "active" else "camp" if e.camp_due else "combat"
     options = []
-    if phase == "camp":
+    if phase == "secret_offer":
+        options = [
+            {"choice_id": "element_secret_enter", "title": "是 · 迎战莎芙", "enabled": True,
+             "description": f"{SECRET_HP}生命/{SECRET_BARRIER}屏障；获得5能量、6张手牌、基础伤害+2。第五回合结束时Boss仍存活将无视护盾秒杀。进入时尝试播放阿黛《雨爱》DJ纯背景音乐；可随时关闭，原十层通关保留。"},
+            {"choice_id": "element_secret_decline", "title": "否 · 带着胜利归来", "enabled": True,
+             "description": "关闭本次邀请，保留十层通关与分数；不会扣除奖励。"}]
+    elif phase == "camp":
         options = [{"choice_id": "element_rest", "title": "风起地休整", "description": f"恢复至多12生命：{e.hp}→{min(MAX_HP,e.hp+12)}；本次不强化。", "enabled": True},
                    {"choice_id": "element_attune", "title": "七曜共鸣", "description": f"七张卡基础伤害永久+1：Lv.{e.power}→{min(3,e.power+1)}；不恢复生命。", "enabled": e.power < 3}]
         if e.edition >= 3 and e.doctrine is None:
@@ -451,12 +518,12 @@ def preview(state):
                            "choice": row["text"], "points": row.get("points", 0), "fatal": False, "bonus": 0} for row in e.log[-6:]]}
     label, incoming = enemy_intent(state)
     last = e.log[-1]["text"] if e.log else "七元素已就绪：先看敌人附着和攻击预告，再搭配出牌。"
-    trait = ("反应额外削盾4；攻击循环7/12/20，第7回合起每回合再+2。" if state.round_no==10 else
+    trait = ("第五回合结束时滑板秒杀。" if state.round_no==11 else "反应额外削盾4；攻击循环7/12/20，第7回合起每回合再+2。" if state.round_no==10 else
              "不攻击；击败额外50分一次。" if state.current_monster.bonus_points else
              ENEMY_STYLES[state.current_monster.monster_id][2] if e.edition>=2 else "初版普通敌人节奏，原规则保持。")
     forecast = [{"turn": turn, "title": enemy_intent(state, turn)[0], "damage": enemy_intent(state, turn)[1]}
                 for turn in range(e.turn, min(e.turn+3, 13 if state.round_no==10 else 9))] if e.edition>=2 and phase=="combat" else []
-    return {"ruleset": ELEMENTS_RULESET, "focus": e.energy, "max_focus": ENERGY,
+    view = {"ruleset": ELEMENTS_RULESET, "focus": e.energy, "max_focus": energy_cap(e),
         "stance": "boss" if state.round_no == 10 else "elements", "phase": phase,
         "hint": (f"营地选一次：回血、加伤{'或学习本局唯一流派' if e.edition>=3 and e.doctrine is None else ''}；首领{BOSS_HP}生命/{BOSS_BARRIER}护盾。" if phase == "camp" else
                  ("机变二选一：留1张牌到下回合，或弃1张获得4盾；共用每回合一次机会。 " if e.edition>=3 else
@@ -478,5 +545,35 @@ def preview(state):
             "weaken": e.weaken, "next_bonus": e.next_bonus, "intent": "尚未揭晓" if phase=="camp" else label, "incoming": 0 if phase=="camp" else incoming,
             "last": last, "draw_count": len(e.draw), "discard_count": len(e.discard),
             "hand_count": len(e.hand), "guide": list(REACTION_GUIDE),
-            "cards": [{"element": k, "title": c.name, "cost": c.cost, "damage": c.damage+e.power,
+            "cards": [{"element": k, "title": c.name, "cost": c.cost, "damage": c.damage+e.power+(SECRET_POWER if state.round_no==11 else 0),
                        "description": c.text} for k,c in CARDS.items()]}}
+    hidden = e.secret in {"active", "won", "lost"}
+    view["elemental"].update(secret=e.secret, base_clear_hp=e.base_clear_hp,
+                             max_energy=energy_cap(e), max_hand=hand_cap(e),
+                             damage_buff=SECRET_POWER if hidden else 0,
+                             base_cleared=e.base_clear_hp is not None,
+                             turn_limit=5 if hidden else 12 if state.round_no==10 else 8)
+    if e.base_clear_hp is not None and "七曜征服者" not in view["report"]["badges"]:
+        view["report"]["badges"].append("七曜征服者")
+    if e.secret == "won": view["report"]["badges"].append("龙龙挑战征服者")
+    if phase == "secret_offer":
+        invitation = f"温迪：旅行者，通关后还剩{e.base_clear_hp}生命，要不要进入隐藏关卡？莎芙（龙龙最可爱）正在等你。"
+        view["hint"] = invitation
+        view["guard_comments"]["venti"] = invitation
+        view["elemental"]["last"] = invitation
+    if hidden:
+        warning = "第5回合结束时若仍存活，莎芙进入滑板状态，无视护盾与削弱秒杀。持续伤害先结算，先击败则获胜。"
+        view.update(stance="secret_boss", chapter={"index":5,"total":5,"title":"龙龙隐藏终章"},
+                    hint=f"每回合{SECRET_ENERGY}能量、抽至{SECRET_HAND}张，卡牌基础伤害额外+{SECRET_POWER}。"+warning)
+        view["elemental"]["enemy_trait"] = warning
+        view["elemental"]["forecast"] = ([{"turn":t,"title":enemy_intent(state,t)[0],"damage":enemy_intent(state,t)[1]}
+                                            for t in range(e.turn,6)] if phase=="combat" else [])
+        if e.doctrine == "flow":
+            view["elemental"]["doctrine"]["description"] = "每回合首次反应返还1能量，隐藏关上限5。"
+        for row in options:
+            if row["choice_id"].startswith("element_hold_"):
+                row["description"] = row["description"].replace("抽至4张", "抽至6张")
+            if row["choice_id"] == "element_end":
+                row["description"] = (warning if e.turn==5 else row["description"].replace("抽至4张", "抽至6张").replace("能量回3", "能量回5"))
+                row["focus_after"] = SECRET_ENERGY
+    return view

@@ -250,9 +250,9 @@ def narrate_facts(facts: dict, model=None) -> BattleScene:
     if facts.get("elemental"):
         # 新反应战斗的数值只读已提交事实，不把旧攻守叙事套到多次出牌上。
         e = facts["elemental"]
-        title = ("七曜首领已被击败，试炼通关。" if facts["status"] == "cleared" else
+        title = (e["last"] if e.get("secret") == "offered" else "莎芙已被击败，隐藏挑战通关！" if e.get("secret") == "won" else "七曜首领已被击败，试炼通关。" if facts["status"] == "cleared" else
                  "本次试炼结束：" + e["last"] if facts["status"] == "dead" else e["last"])
-        encounter = (f"第{facts['next_round']}层 · {facts['next_monster'] or '营地'}；生命{e['hp']}/{e['max_hp']}，能量{e['energy']}/3。\n{facts['rule_hint']}"
+        encounter = (f"第{facts['next_round']}层 · {facts['next_monster'] or '营地'}；生命{e['hp']}/{e['max_hp']}，能量{e['energy']}/{e.get('max_energy',3)}。\n{facts['rule_hint']}"
                      if facts["status"] == "active" else f"累计{facts['score']}分。")
         return BattleScene(title, encounter, tuple(ChoiceText(row["choice_id"], row["title"], row["description"])
                                                   for row in facts["rule_options"]), "template")

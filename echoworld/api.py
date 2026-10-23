@@ -121,6 +121,7 @@ class ActionRequest(BaseModel):
                     "traveler_aether", "traveler_lumine",
                     "element_pyro", "element_hydro", "element_electro", "element_cryo", "element_dendro", "element_anemo", "element_geo",
                     "element_end", "element_rest", "element_attune",
+                    "element_secret_enter", "element_secret_decline",
                     "element_hold_pyro", "element_hold_hydro", "element_hold_electro", "element_hold_cryo",
                     "element_hold_dendro", "element_hold_anemo", "element_hold_geo",
                     "element_parry_pyro", "element_parry_hydro", "element_parry_electro", "element_parry_cryo",
@@ -132,7 +133,7 @@ class ActionRequest(BaseModel):
                     "route_rest", "route_hunt", "card_jab", "card_heavy", "card_guard", "card_meditate",
                     "card_lunge", "card_counter", "card_riposte", "card_charge", "card_breathe",
                     "draft_lunge", "draft_counter", "draft_riposte", "draft_charge", "draft_skip"]
-    expected_round: int | None = Field(default=None, strict=True, ge=1, le=10)
+    expected_round: int | None = Field(default=None, strict=True, ge=1, le=11)
     request_id: str = Field(strict=True, pattern=r"^[a-zA-Z0-9_-]{1,80}$")
     expected_version: int = Field(strict=True, ge=0)
 
