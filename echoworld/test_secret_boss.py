@@ -204,7 +204,8 @@ class SecretApi(unittest.TestCase):
         self.assertTrue(response.content.startswith(b"ID3") or response.content[0]==0xff)
         html=self.client.get("/").text
         self.assertIn("/assets/audio/yuai-adai-dj.mp3",html)
-        self.assertIn('controls loop preload="none"',html)
+        self.assertIn('id="secretAudio" loop preload="none"',html)
+        self.assertNotIn('id="secretAudio" controls',html)
 
 
 if __name__=="__main__":unittest.main()

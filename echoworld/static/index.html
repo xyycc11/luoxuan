@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#f2eee3">
 <title>EchoWorld · 提瓦特风之试炼</title>
-<link rel="stylesheet" href="/assets/adventure-v2.css">
+<link rel="stylesheet" href="/assets/adventure-v2.css?v=20261023-elements">
 </head>
 <body>
 <a class="skip-link" href="#adventure">跳到试炼操作</a>
@@ -49,7 +49,6 @@
 <img src="/assets/characters/venti.jpg" class="secret-venti" alt="温迪向你发出邀请">
 <h2 id="secretOfferTitle">温迪的隐藏邀请</h2><p id="secretInvitation"></p>
 <p>莎芙（龙龙最可爱）：210生命、32屏障。旅人每回合5能量、抽至6张、基础伤害额外+2。第5回合结束Boss未倒下，则滑板无视护盾秒杀。原十层通关保留。</p>
-<label><input id="secretMusicConsent" type="checkbox" checked>进入时播放阿黛《雨爱》DJ背景音乐（可关闭）</label>
 <div class="quest-actions"><button data-action="element_secret_enter">是 · 进入隐藏关卡</button><button data-action="element_secret_decline" class="secondary">否 · 保留胜利</button></div>
 <button id="secretRecover" type="button" class="secondary" hidden>查询刚才的选择</button>
 </dialog>
@@ -74,12 +73,6 @@
 <p id="battleFocus">先完成许可任务。</p><p id="blessingSummary"></p><p id="battleHint"></p>
 <label class="quiet-note"><input id="cardFxEnabled" type="checkbox" checked>抽牌与出牌特效（遵循系统减少动态效果设置）</label>
 <section id="elementPanel" class="element-panel" hidden aria-label="七元素战况"></section>
-<section id="secretMusic" class="secret-music" hidden aria-label="隐藏关音乐">
-<strong>阿黛《雨爱》DJ · 纯背景音乐</strong><p id="secretMusicStatus" class="quiet-note">进入时尝试自动播放；浏览器拦截时点播放。音乐不影响战斗结算。</p>
-<audio id="secretAudio" controls loop preload="none" aria-label="隐藏关背景音乐"></audio>
-<button id="secretMusicPlay" type="button" class="secondary">播放音乐</button><button id="secretMusicStop" type="button" class="secondary">关闭音乐</button>
-<label class="quiet-note">也可选择本机音频（仅浏览器读取，不上传）：<input id="secretMusicFile" type="file" accept="audio/mpeg,audio/mp4,audio/ogg,audio/wav,.mp3,.m4a,.ogg,.wav"></label>
-</section>
 <section id="relicPanel" class="relic-panel" hidden aria-label="本局遗物构筑"><div class="route-heading"><strong>本局遗物</strong><small>触发效果已计入下方选项</small></div><div id="relicInventory" class="relic-inventory"></div></section>
 <section id="chapterRoutes" class="chapter-routes" hidden aria-label="章节路线与挑战进度"><div class="route-heading"><strong>章节路线</strong><small>只计本章 · 不改变生存概率</small></div><div id="routeContracts"></div></section>
 <section id="deckPanel" class="deck-panel" hidden aria-label="本局战术牌组"><div class="route-heading"><strong>本局牌组</strong><small id="deckCounts"></small></div><p class="quiet-note">每轮3张手牌，选1张完成遭遇；其余一起弃置。相同手牌合并显示，不能连续打出多张。</p><details><summary>查看完整牌组 · 不含抽牌顺序</summary><div id="deckComposition"></div></details></section>
@@ -135,14 +128,20 @@
 <pre id="shareStatus"></pre><div id="myCandidates"></div><div id="publicFaq"></div></details></section>
 </main>
 <footer>EchoWorld · 原神世界观同人学习项目，非官方内容。角色与怪物美术版权归原权利方，素材来源见项目说明；原背景沿用既有插画。<span>下一阵风，仍由你选择方向。</span></footer>
+<div id="secretMusic" class="music-dock" hidden aria-label="隐藏关背景音乐">
+<audio id="secretAudio" loop preload="none"></audio>
+<button id="secretMusicToggle" class="music-toggle" type="button" aria-label="开启背景音乐" aria-pressed="false" aria-describedby="secretMusicStatus" title="开启背景音乐 · 阿黛《雨爱》DJ"><span aria-hidden="true">♪</span></button>
+<span id="secretMusicStatus" class="visually-hidden" role="status" aria-live="polite">背景音乐已关闭。</span>
+</div>
 <script src="/assets/card-fx.js"></script>
 <script>
 let currentState = null;
 let isBusy = false;
 let aiBusy=false,aiAvailable=false,aiProposal=null,aiLastRequest=null,aiNonce=0;
-let secretAudioObjectUrl=null,secretAudioPlayer=null;
+let secretAudioPlayer=null,musicPlayAttempt=0;
 const TRAVELER_ART={aether:'/assets/characters/aether.jpg',lumine:'/assets/characters/lumine.jpg'};
 const GUARD_ART={venti:'/assets/characters/venti.jpg',varka:'/assets/characters/varka.jpg'};
+const ELEMENT_ART={pyro:['火','PYRO'],hydro:['水','HYDRO'],electro:['雷','ELECTRO'],cryo:['冰','CRYO'],dendro:['草','DENDRO'],anemo:['风','ANEMO'],geo:['岩','GEO']};
 const MONSTER_ART={
   '丘丘人':'hilichurl.png','木盾丘丘暴徒':'wooden-mitachurl.png','火史莱姆':'pyro-slime.png',
   '风丘丘萨满':'anemo-samachurl.png','遗迹守卫':'ruin-guard.png','大伟丘':'unusual-hilichurl.png',
@@ -179,7 +178,7 @@ function updateActionButtons(){
 }
 function busy(on){
   isBusy=on;
-  document.querySelectorAll('button,input,select,textarea').forEach(item=>item.disabled=on);
+  document.querySelectorAll('button,input,select,textarea').forEach(item=>{if(item.id!=='secretMusicToggle')item.disabled=on});
   // 恢复交互不等于恢复所有动作：状态与未确认回执仍决定可点击范围。
   updateActionButtons();
   updateAIControls();
@@ -191,9 +190,9 @@ function displayBattle(combat){
   const secretActive=combat?.elemental?.secret==='active';
   el('secretMusic').hidden=!secretActive;
   if(!secretActive||secretAudioPlayer!==el('player').value){
+    musicPlayAttempt++;
     el('secretAudio').pause();el('secretAudio').removeAttribute('src');el('secretAudio').load();
-    if(secretAudioObjectUrl){URL.revokeObjectURL(secretAudioObjectUrl);secretAudioObjectUrl=null}
-    el('secretMusicFile').value='';secretAudioPlayer=null;
+    secretAudioPlayer=null;syncSecretMusic();
   }
   const art=MONSTER_ART[combat?.monster_id];
   const showEnemy=Boolean(art&&combat&&(combat.phase==='combat'||combat.status!=='active'));
@@ -382,6 +381,13 @@ function displayElements(combat){
     const meta=document.createElement('small');meta.className='card-cost';meta.textContent=option.kind==='parry'?'弃牌换盾 · 与留牌共享机变':option.kind==='hold'?(e.edition>=3?'留牌 · 与招架共享机变':'留牌 · 每回合限1次 · 不耗能量'):option.cost===undefined?'营地取舍':option.choice_id==='element_end'?'敌方行动 / 抽新手牌':`${option.cost} 能量 · 本回合可连打`;
     const name=document.createElement('strong');name.textContent=option.title;
     const description=document.createElement('span');description.textContent=option.description;
+    if(ELEMENT_ART[option.element]&&!['hold','parry'].includes(option.kind)){
+      const [label,roman]=ELEMENT_ART[option.element];
+      const crest=document.createElement('div');crest.className='element-crest';crest.setAttribute('aria-hidden','true');
+      const emblem=document.createElement('img');emblem.src='/assets/elements/'+option.element+'.webp';emblem.alt='';emblem.width=88;emblem.height=88;
+      const caption=document.createElement('small');caption.className='element-inscription';caption.textContent=label+' ELEMENT / '+roman;
+      crest.append(emblem,caption);button.append(crest);button.classList.add('illustrated-card');
+    }
     button.append(meta,name,description);
     if(option.kind==='hold'){
       if(!holdChoices){holdChoices=document.createElement('details');holdChoices.className='hold-choices';const summary=document.createElement('summary');summary.textContent='准备下一回合 · 选择留1张牌';holdChoices.append(summary)}
@@ -525,7 +531,7 @@ async function showAction(result){
   window.EchoCardFX?.cleanup();
   forget();await refresh();
   window.EchoCardFX?.resolve(result,cardEffect,previous);
-  if(result.code==='SECRET_ENTERED'&&currentState?.combat?.elemental?.secret==='active'&&el('secretMusicConsent').checked&&!el('secretAudio').getAttribute('src'))playSecretMusic();
+  if(result.code==='SECRET_ENTERED'&&currentState?.combat?.elemental?.secret==='active'&&!el('secretAudio').getAttribute('src'))playSecretMusic();
     const titles={QUEST_ACCEPTED:'委托已接受 · 先准备一份herb。',TRAINING_HERB_CLAIMED:'教学herb已领取 · 可以交付。',COMPLETED:'许可已获得 · 选择你的试炼。',ENTER_ALLOWED:'许可核验通过。',COMBAT_STARTED:'旅程开始。',BLESSING_CHOSEN:'符文已选择。',CAMP_CHOSEN:'营地选择已记录。',RELIC_CHOSEN:'遗物已收下 · 下一轮开始产生联动。',ROUTE_CHOSEN:'章节路线已选 · 按本章目标前进。',ROUND_RESOLVED:'这一轮，风记住了你的选择。',PLAYER_DEAD:'本次试炼止步。',TOWER_CLEARED:'十轮远行，抵达塔顶。'};
   titles.CARD_DRAFTED='营地选牌已记录 · 下一手已准备。';
   titles.ELEMENT_PLAYED='元素牌已结算 · 可以继续搭配，或结束回合。';
@@ -564,21 +570,25 @@ el('secretOffer').addEventListener('cancel',event=>event.preventDefault());
 el('secretRecover').onclick=()=>el('recover').click();
 async function playSecretMusic(){
   if(currentState?.combat?.elemental?.secret!=='active')return;
+  const attempt=++musicPlayAttempt;
   const audio=el('secretAudio');secretAudioPlayer=el('player').value;
   if(!audio.getAttribute('src'))audio.src='/assets/audio/yuai-adai-dj.mp3';
   audio.volume=0.35;
-  try{await audio.play();el('secretMusicStatus').textContent='阿黛《雨爱》DJ播放中；可调音量或关闭。'}
-  catch(error){el('secretMusicStatus').textContent=error.name==='NotAllowedError'?'浏览器拦截自动播放，请点“播放音乐”。':'音频尚不可用，可选择本机MP3/M4A；不影响隐藏挑战。'}
+  try{await audio.play();if(attempt===musicPlayAttempt)syncSecretMusic()}
+  catch(error){if(attempt===musicPlayAttempt){syncSecretMusic();el('secretMusicStatus').textContent=error.name==='NotAllowedError'?'浏览器拦截自动播放，请点击右下角音乐开关。':'音频暂不可用，可点击右下角开关重试，不影响战斗。'}}
 }
-el('secretMusicPlay').onclick=playSecretMusic;
-el('secretMusicStop').onclick=()=>{el('secretAudio').pause();el('secretMusicStatus').textContent='音乐已关闭。'};
-el('cardFxEnabled').onchange=()=>{if(!el('cardFxEnabled').checked)window.EchoCardFX?.cleanup()};
-el('secretMusicFile').onchange=()=>{
-  const file=el('secretMusicFile').files[0];if(!file)return;
-  if(file.size>30*1024*1024){el('secretMusicStatus').textContent='请选择30MB以内的音频。';return}
-  if(secretAudioObjectUrl)URL.revokeObjectURL(secretAudioObjectUrl);
-  secretAudioObjectUrl=URL.createObjectURL(file);el('secretAudio').src=secretAudioObjectUrl;playSecretMusic();
+function syncSecretMusic(){
+  const playing=!el('secretAudio').paused&&!el('secretAudio').error;
+  const button=el('secretMusicToggle');button.setAttribute('aria-pressed',String(playing));
+  const label=playing?'关闭背景音乐':'开启背景音乐';
+  button.setAttribute('aria-label',label);button.title=label+' · 阿黛《雨爱》DJ';
+  el('secretMusicStatus').textContent=playing?'阿黛《雨爱》DJ播放中。':'背景音乐已关闭。';
+}
+el('secretMusicToggle').onclick=()=>{
+  if(el('secretAudio').paused)playSecretMusic();else{musicPlayAttempt++;el('secretAudio').pause();syncSecretMusic()}
 };
+for(const event of ['play','pause','ended','emptied'])el('secretAudio').addEventListener(event,syncSecretMusic);
+el('cardFxEnabled').onchange=()=>{if(!el('cardFxEnabled').checked)window.EchoCardFX?.cleanup()};
 el('travelerRecover').onclick=()=>el('recover').click();
 el('travelerChoices').onclick=event=>{
   const button=event.target.closest('button[data-traveler]');if(!button||button.disabled)return;

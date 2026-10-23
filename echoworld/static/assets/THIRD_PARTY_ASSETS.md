@@ -34,4 +34,6 @@
 
 ## 使用范围说明
 
+2026-10-23七元素牌面图标：`elements/pyro.webp`、`hydro.webp`、`electro.webp`、`cryo.webp`、`dendro.webp`、`anemo.webp`、`geo.webp`。原图来源为[genshin.dev社区资料服务](https://github.com/genshindev/api)，公开原图地址格式为`https://genshin.jmp.blue/elements/<元素英文名>/icon`，按其`/elements/pyro/list`返回的`icon`类型下载。源响应实际为WebP，因此本地按真实格式原样保存，无转码、AI生成或重绘；网页只本地读取，不运行时请求社区服务器。项目代码许可不覆盖原神元素美术，权利仍归原权利方。
+
 角色与怪物美术的权利归原权利方；公开可见不等于获得通用开源授权。按用户要求用于非官方学习项目展示，并经用户授权随学习仓库上传GitHub；不主张取得商业使用授权。项目自己的代码许可不覆盖这些第三方美术。旧风城背景沿用此前已有插画，本轮没有生成新背景或角色。
