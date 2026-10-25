@@ -65,7 +65,7 @@ def apply_action(game: GameState, combat: CombatState | None, action: str,
                     "tower_expedition": EXPEDITION_RULESET, "tower_spire": SPIRE_RULESET,
                     "tower_routes": ROUTES_RULESET, "tower_cards": CARDS_RULESET,
                     "tower_elements": ELEMENTS_RULESET}[action]
-            combat = start_combat(game, seed=seed, ruleset=mode, elements_edition=4)
+            combat = start_combat(game, seed=seed, ruleset=mode, elements_edition=5)
             code = "COMBAT_STARTED"
             scene = asdict(narrate(combat))
     elif action in ELEMENT_ACTIONS:

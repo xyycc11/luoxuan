@@ -90,3 +90,8 @@ h1,h2,h3,p{margin-top:0}h1,h2,h3{font-family:var(--serif);font-weight:600}h1{fon
 .card-fx-ghost{position:fixed;z-index:60;pointer-events:none;width:140px;min-height:100px;padding:18px;display:grid;place-items:center;border:2px solid var(--fx-color);border-radius:14px;background:linear-gradient(145deg,#fffaee,#e5dac5);color:#453c30;font:600 18px/1.5 var(--serif);box-shadow:0 0 28px var(--fx-color);text-align:center}
 .card-fx-hit{position:fixed;z-index:61;pointer-events:none;width:90px;height:90px;border:4px solid var(--fx-color);border-radius:50%;background:radial-gradient(circle,#fff9,var(--fx-color) 20%,transparent 65%);box-shadow:0 0 30px var(--fx-color)}
 @media(prefers-reduced-motion:reduce){.card-fx-ghost,.card-fx-hit{display:none!important}}
+.refinement-choices{grid-column:1/-1;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;padding-top:14px;border-top:1px solid var(--line)}
+.refinement-note{grid-column:1/-1;margin:0;font:600 14px/1.7 var(--sans);color:var(--ink)}
+.element-refinements{font-size:13px;line-height:1.7;color:var(--ink);border-left:3px solid #b59149;padding-left:10px}
+.refined-card{outline:2px solid #b59149;outline-offset:2px}.refined-badge{order:4;align-self:flex-start;font:600 11px/1.6 var(--sans);color:#775519}
+@media(max-width:700px){.refinement-choices{grid-template-columns:minmax(0,1fr)}.refined-badge{grid-column:2}}

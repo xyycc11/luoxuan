@@ -127,6 +127,8 @@ class ActionRequest(BaseModel):
                     "element_parry_pyro", "element_parry_hydro", "element_parry_electro", "element_parry_cryo",
                     "element_parry_dendro", "element_parry_anemo", "element_parry_geo",
                     "element_doctrine_assault", "element_doctrine_bastion", "element_doctrine_flow",
+                    "element_refine_pyro", "element_refine_hydro", "element_refine_electro", "element_refine_cryo",
+                    "element_refine_dendro", "element_refine_anemo", "element_refine_geo",
                     "strike", "guard", "boon_wind", "boon_flame", "boon_knight",
                     "camp_rest", "camp_forge", "camp_cash",
                     "relic_ember", "relic_mirror", "relic_feather", "relic_lantern", "relic_echo", "relic_dew",

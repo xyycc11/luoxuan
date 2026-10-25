@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#f2eee3">
 <title>EchoWorld · 提瓦特风之试炼</title>
-<link rel="stylesheet" href="/assets/adventure-v2.css?v=20261023-elements">
+<link rel="stylesheet" href="/assets/adventure-v2.css?v=20261023-elements-refine20261025">
 </head>
 <body>
 <a class="skip-link" href="#adventure">跳到试炼操作</a>
@@ -353,7 +353,7 @@ function displayElements(combat){
   }
   panel.append(meters);
   const details=document.createElement('p');details.textContent=combat.phase==='camp'
-    ?(e.edition>=3&&!e.doctrine?'出发前选择一次：回血、提高伤害，或放弃两者学习一种本局流派。':'出发前选择一次：回复生命，或提高七张牌的基础伤害。')
+    ?(e.edition>=5?'本营地只选一次：回血、全牌加伤、学习流派，或从下方固定候选中精炼一张元素牌。':e.edition>=3&&!e.doctrine?'出发前选择一次：回血、提高伤害，或放弃两者学习一种本局流派。':'出发前选择一次：回复生命，或提高七张牌的基础伤害。')
     :`旅人护盾 ${e.block} · 敌人屏障 ${e.barrier} · 元素附着【${e.aura}】 · 草原核 ${e.cores} · 持续伤害 ${e.dot} · 下张额外伤害 ${e.next_bonus}`;
   const intent=document.createElement('p');intent.className='element-intent';intent.textContent=active&&combat.phase==='combat'
     ?e.secret==='active'&&e.turn===5?'最后机会：本回合结束先结算持续伤害；莎芙仍存活则滑板秒杀，无视护盾与削弱。':`敌方预告：${e.intent} ${e.incoming}伤 · 削弱${e.weaken} · 当前预计失去${Math.max(0,e.incoming-e.weaken-e.block)}生命`
@@ -370,12 +370,17 @@ function displayElements(combat){
     }
   }
   if(e.doctrine){const doctrine=document.createElement('p');doctrine.className='element-doctrine';doctrine.textContent=`流派【${e.doctrine.title}】 · ${e.doctrine.description} · ${e.doctrine.used?'本回合已触发':'本回合待触发'}`;panel.append(doctrine)}
+  if(e.edition>=5){
+    const refined=document.createElement('p');refined.className='element-refinements';
+    refined.textContent=e.refinements?.length?'本局精炼 · '+e.refinements.map(r=>r.title).join(' / '):'尚未精炼 · 第4/7/10层营地可用一次休整机会强化单张元素牌。';
+    panel.append(refined);
+  }
   const guide=document.createElement('details'),summary=document.createElement('summary');summary.textContent='七张卡与元素反应速查 · 原创简化规则';guide.append(summary);
   for(const card of e.cards){const row=document.createElement('p');row.textContent=`${card.title} · 耗${card.cost}能量 · 基础${card.damage}伤 · ${card.description}`;guide.append(row)}
   for(const text of e.guide){const row=document.createElement('p');row.textContent=text;guide.append(row)}
   panel.append(guide);
   el('cardHand').hidden=!active;el('cardHand').replaceChildren();
-  let holdChoices=null,parryChoices=null;
+  let holdChoices=null,parryChoices=null,refineChoices=null;
   for(const option of combat.options){
     const button=document.createElement('button');button.className='tactic-card element-card'+(['hold','parry'].includes(option.kind)?' hold-card':'');button.dataset.action=option.choice_id;button.dataset.element=option.element||'neutral';
     const meta=document.createElement('small');meta.className='card-cost';meta.textContent=option.kind==='parry'?'弃牌换盾 · 与留牌共享机变':option.kind==='hold'?(e.edition>=3?'留牌 · 与招架共享机变':'留牌 · 每回合限1次 · 不耗能量'):option.cost===undefined?'营地取舍':option.choice_id==='element_end'?'敌方行动 / 抽新手牌':`${option.cost} 能量 · 本回合可连打`;
@@ -389,16 +394,22 @@ function displayElements(combat){
       crest.append(emblem,caption);button.append(crest);button.classList.add('illustrated-card');
     }
     button.append(meta,name,description);
+    if(option.refined){button.classList.add('refined-card');const tag=document.createElement('small');tag.className='refined-badge';tag.textContent='精炼已生效';button.append(tag)}
     if(option.kind==='hold'){
       if(!holdChoices){holdChoices=document.createElement('details');holdChoices.className='hold-choices';const summary=document.createElement('summary');summary.textContent='准备下一回合 · 选择留1张牌';holdChoices.append(summary)}
       holdChoices.append(button);
     }else if(option.kind==='parry'){
       if(!parryChoices){parryChoices=document.createElement('details');parryChoices.className='hold-choices';const summary=document.createElement('summary');summary.textContent='应对本回合 · 弃1张牌换4盾（本回合不能再留牌）';parryChoices.append(summary)}
       parryChoices.append(button);
+    }else if(option.kind==='refine'){
+      if(!refineChoices){refineChoices=document.createElement('section');refineChoices.className='refinement-choices';refineChoices.setAttribute('aria-label','本营地元素精炼候选');
+        const note=document.createElement('p');note.className='refinement-note';note.textContent='元素精炼 · 本营地固定三选一，放弃其他营地奖励；此牌本局永久强化。';refineChoices.append(note)}
+      refineChoices.append(button);
     }else el('cardHand').append(button);
   }
   if(holdChoices)el('cardHand').append(holdChoices);
   if(parryChoices)el('cardHand').append(parryChoices);
+  if(refineChoices)el('cardHand').append(refineChoices);
   window.EchoCardFX?.deal(el('cardHand'),`${el('player').value}:${combat.round_no}:${e.turn}:${combat.phase}`);
   if(!active){
     el('runSummary').hidden=false;
@@ -449,7 +460,7 @@ async function refresh(){
   if(state.combat){
     el('scene').textContent=state.combat.status==='active'
       ?(state.combat.phase==='blessing'?'已恢复开场祝福；候选不重抽，请选择其中一种。'
-        :state.combat.phase==='camp'?(state.combat.elemental?'已恢复营地取舍：按当前选项选择回血、加伤或流派；只能领取一种，不消耗战斗回合。':'已恢复营地选择；下一轮敌人尚未揭晓。请选择休整、共鸣或战功，不会消耗战斗轮次。')
+        :state.combat.phase==='camp'?(state.combat.elemental?(state.combat.elemental.edition>=5?'已恢复营地取舍：回血、加伤、流派或元素精炼；只能选一项，精炼候选刷新不变。':'已恢复营地取舍：按当前选项选择回血、加伤或流派；只能领取一种，不消耗战斗回合。'):'已恢复营地选择；下一轮敌人尚未揭晓。请选择休整、共鸣或战功，不会消耗战斗轮次。')
         :state.combat.phase==='relic'?'已恢复遗物三选一，候选不会重抽；下一轮敌人尚未揭晓。领取不会立即加分。'
         :state.combat.phase==='route'?'已恢复章节分岔；选择不会耗战斗轮次。先看专注成本与目标，不改变抽怪风险。'
         :state.combat.phase==='draft'?'已恢复营地选牌，候选不重抽；选新卡或跳过，之后揭晓下一轮。'

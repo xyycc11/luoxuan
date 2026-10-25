@@ -127,6 +127,10 @@ def visible_packet(game, combat, version, npc_id, goal, question, kind):
             reasons["element_doctrine"] = "营地可放弃回血/加伤，学本局唯一流派：每回合首次反应额外3伤、3盾或返1能量；学后不可更换。"
             if phase == "camp":
                 reasons["element_camp"] = "营地只能领一种：回血12、永久加伤1，或学一种唯一流派；当前可选项以界面为准，不能同时领取。"
+        if e.get("edition", 1) >= 5:
+            reasons["element_refinement"] = "营地另有固定3种元素精炼候选，每张牌本局最多精炼一次；只改变该牌，不增加牌数。与回血、全牌加伤、学习流派互斥，效果以当前预览为准。"
+            if phase == "camp":
+                reasons["element_camp"] = "营地只能选择一项：回血、全牌加伤、未学习的流派，或当前候选中的单牌精炼；不能同时领奖。"
         if e.get("secret") in {"active", "won", "lost"}:
             reasons["element_boss"] = "隐藏关莎芙210生命/32屏障；5能量、6张手牌、基础伤害+2。第五回合结束仍存活则滑板无视护盾秒杀；先结算持续伤害。"
     return {"kind": kind, "version": version, "ruleset": combat.ruleset, "npc_id": npc_id,

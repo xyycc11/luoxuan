@@ -48,7 +48,17 @@ DOCTRINES = {
     "flow": ("清泉流转", "每回合首次触发元素反应时，返还1能量（上限3）。"),
 }
 DOCTRINE_ACTIONS = tuple("element_doctrine_" + key for key in DOCTRINES)
-CAMP_ACTIONS = ("element_rest", "element_attune") + DOCTRINE_ACTIONS
+REFINEMENTS = {
+    "pyro": ("烈焰升格", "火牌基础伤害+4，仍消耗2能量。"),
+    "hydro": ("清泉滋养", "水牌治疗由2提高至5，不超过生命上限。"),
+    "electro": ("雷鸣引爆", "雷牌触发任意元素反应时，额外造成4伤害。"),
+    "cryo": ("霜华加护", "冰牌自身护盾由2提高至6，冻结效果不变。"),
+    "dendro": ("生息萌芽", "草牌触发元素反应时，额外获得4护盾。"),
+    "anemo": ("余风回响", "风牌触发扩散时额外伤害+4，返能量规则不变。"),
+    "geo": ("磐岩坚壁", "岩牌自身护盾由5提高至9，结晶效果另算。"),
+}
+REFINE_ACTIONS = tuple("element_refine_" + key for key in DECK)
+CAMP_ACTIONS = ("element_rest", "element_attune") + DOCTRINE_ACTIONS + REFINE_ACTIONS
 ACTIONS = tuple("element_" + key for key in DECK) + HOLD_ACTIONS + PARRY_ACTIONS + ("element_end",) + CAMP_ACTIONS + SECRET_ACTIONS
 ENEMY_STYLES = {
     "丘丘人": ("疾攻", (4, 4, 7), "连续快攻；适合用冻结或结晶稳住节奏。"),
@@ -99,7 +109,7 @@ class ElementState:
     camp_due: bool = False
     camps: list[dict] = field(default_factory=list)
     log: list[dict] = field(default_factory=list)
-    # 缺字段的旧JSON默认初版；只有新开局显式用第二版，不热改旧局。
+    # 缺字段的旧JSON默认初版；只有新开局显式选择新版，不热改旧局。
     edition: int = 1
     held: str | None = None
     hold_used: bool = False
@@ -109,9 +119,11 @@ class ElementState:
     # 第四版隐藏挑战。十层结算血量单独保存，不因后续治疗重新解锁。
     secret: str = "none"
     base_clear_hp: int | None = None
+    # 第五版营地精炼：保持七张独立牌，不复制卡牌；每张最多精炼一次。
+    refinements: list[str] = field(default_factory=list)
 
     def __post_init__(self):
-        if type(self.edition) is not int or self.edition not in {1, 2, 3, 4}:
+        if type(self.edition) is not int or self.edition not in {1, 2, 3, 4, 5}:
             raise ValueError("invalid elemental edition")
         if self.secret not in {"none", "offered", "declined", "active", "won", "lost"}:
             raise ValueError("invalid secret challenge")
@@ -131,6 +143,11 @@ class ElementState:
             raise ValueError("invalid doctrine trigger")
         if self.edition < 3 and (self.doctrine is not None or self.doctrine_used):
             raise ValueError("old editions cannot learn doctrines")
+        if (not isinstance(self.refinements, list) or len(self.refinements) > 3
+                or any(type(k) is not str or k not in REFINEMENTS for k in self.refinements)
+                or len(set(self.refinements)) != len(self.refinements)
+                or (self.edition < 5 and self.refinements)):
+            raise ValueError("invalid elemental refinements")
         hidden = self.secret in {"active", "won", "lost"}
         bounds = {"hp": (0, MAX_HP), "energy": (0, SECRET_ENERGY if hidden else ENERGY), "block": (0, 30),
                   "power": (0, 3), "turn": (1, 5 if hidden else 12), "enemy_hp": (0, SECRET_HP if hidden else BOSS_HP),
@@ -164,7 +181,8 @@ class ElementState:
             if (not isinstance(row, dict) or set(row) != {"floor", "action"}
                     or type(row["floor"]) is not int or row["floor"] not in {4,7,10}
                     or row["action"] not in CAMP_ACTIONS
-                    or (self.edition < 3 and row["action"] in DOCTRINE_ACTIONS)):
+                    or (self.edition < 3 and row["action"] in DOCTRINE_ACTIONS)
+                    or (self.edition < 5 and row["action"] in REFINE_ACTIONS)):
                 raise ValueError("invalid elemental camp record")
         if [row["floor"] for row in self.camps] != [4,7,10][:len(self.camps)]:
             raise ValueError("elemental camps must be sequential")
@@ -174,6 +192,10 @@ class ElementState:
                    if row["action"] in DOCTRINE_ACTIONS]
         if learned != ([self.doctrine] if self.doctrine is not None else []):
             raise ValueError("doctrine must match exactly one earned camp choice")
+        refined = [row["action"].removeprefix("element_refine_") for row in self.camps
+                   if row["action"] in REFINE_ACTIONS]
+        if refined != self.refinements:
+            raise ValueError("refinements must match earned camp choices")
 
 
 def energy_cap(e):
@@ -182,6 +204,31 @@ def energy_cap(e):
 
 def hand_cap(e):
     return SECRET_HAND if e.secret in {"active", "won", "lost"} else 4
+
+
+def refinement_offers(state):
+    """只展示当前营地候选；由独立种子固定，不触碰战斗抽牌随机流。"""
+    e = state.elemental
+    if e.edition < 5 or not e.camp_due or state.status != "active":
+        return []
+    choices = [k for k in DECK if k not in e.refinements]
+    return Random(f"refine:{state.seed}:{state.round_no}").sample(choices, min(3, len(choices)))
+
+
+def refinement_text(e, key):
+    return ("精炼【" + REFINEMENTS[key][0] + "】：" + REFINEMENTS[key][1]) if key in e.refinements else ""
+
+
+def card_text(e, key):
+    """牌面说明使用当前数值，避免精炼后的预览仍显示旧治疗/护盾。"""
+    text = CARDS[key].text
+    if e.edition >= 5 and key in e.refinements:
+        replacements = {"hydro": ("恢复2生命", "恢复5生命"),
+                        "cryo": ("获得2护盾", "获得6护盾"),
+                        "geo": ("获得5护盾", "获得9护盾")}
+        if key in replacements:
+            text = text.replace(*replacements[key])
+    return text
 
 
 def _draw(e, seed, floor):
@@ -266,7 +313,7 @@ def card_effect(e, key):
     """对副本结算：预览与实打完全同源；不改调用者。"""
     e = copy(e)
     # 历史条目只追加不原地改写；复制容器即可，避免每个牌面预览深拷贝整局日志。
-    for name in ("hand", "draw", "discard", "log", "camps"):
+    for name in ("hand", "draw", "discard", "log", "camps", "refinements"):
         setattr(e, name, list(getattr(e, name)))
     card, previous = CARDS[key], e.aura
     reaction, extra = "", 0
@@ -274,7 +321,9 @@ def card_effect(e, key):
     e.next_bonus = 0
     e.energy -= card.cost
     e.block = min(30, e.block + card.block)
-    heal = min(MAX_HP - e.hp, card.heal)
+    refined = e.edition >= 5 and key in e.refinements
+    if refined and key in {"cryo", "geo"}: e.block = min(30, e.block + 4)
+    heal = min(MAX_HP - e.hp, card.heal + (3 if refined and key == "hydro" else 0))
     e.hp += heal
     if key in {"anemo", "geo"} and previous in {"pyro", "hydro", "cryo", "electro"}:
         reaction = "扩散" if key == "anemo" else "结晶"
@@ -297,6 +346,10 @@ def card_effect(e, key):
         e.cores -= 1
         reaction = (reaction + " + " if reaction else "") + ("烈绽放" if key == "pyro" else "超绽放")
         extra += 8
+    if refined:
+        if key == "electro" and reaction: extra += 4
+        if key == "anemo" and reaction == "扩散": extra += 4
+        if key == "dendro" and reaction: e.block = min(30, e.block + 4)
     doctrine_trigger = ""
     if e.edition >= 3 and reaction and e.doctrine and not e.doctrine_used:
         e.doctrine_used = True
@@ -305,10 +358,12 @@ def card_effect(e, key):
         if e.doctrine == "bastion": e.block = min(30, e.block + 3)
         if e.doctrine == "flow": e.energy = min(energy_cap(e), e.energy + 1)
     buff = SECRET_POWER if e.secret in {"active", "won", "lost"} else 0
-    hp_damage, shield_damage = _damage(e, card.damage + e.power + buff + old_bonus + extra, bool(reaction))
+    hp_damage, shield_damage = _damage(e, card.damage + e.power + buff + old_bonus + extra
+                                      + (4 if refined and key == "pyro" else 0), bool(reaction))
     return e, {"reaction": reaction, "damage": hp_damage, "barrier_damage": shield_damage,
                "heal": heal, "block_after": e.block, "energy_after": e.energy,
-               "bonus_damage": extra, "aura_after": e.aura, "doctrine_trigger": doctrine_trigger}
+               "bonus_damage": extra, "aura_after": e.aura, "doctrine_trigger": doctrine_trigger,
+               "refinement": REFINEMENTS[key][0] if refined else ""}
 
 
 def _record(state, action, **values):
@@ -355,18 +410,23 @@ def perform(state, action, expected_round):
     e = state.elemental
     if action in DOCTRINE_ACTIONS and e.edition < 3: return "DOCTRINE_NOT_SUPPORTED"
     if action in PARRY_ACTIONS and e.edition < 3: return "PARRY_NOT_SUPPORTED"
+    if action in REFINE_ACTIONS and e.edition < 5: return "REFINEMENT_NOT_SUPPORTED"
     if e.camp_due:
         if action not in CAMP_ACTIONS: return "ELEMENT_CAMP_REQUIRED"
         if action == "element_attune" and e.power >= 3: return "UPGRADE_MAXED"
         if action in DOCTRINE_ACTIONS and e.doctrine is not None: return "DOCTRINE_ALREADY_LEARNED"
+        if action in REFINE_ACTIONS and action.removeprefix("element_refine_") not in refinement_offers(state):
+            return "REFINEMENT_NOT_OFFERED"
         before = e.hp
         if action == "element_rest": e.hp = min(MAX_HP, e.hp + 12)
         elif action == "element_attune": e.power += 1
+        elif action in REFINE_ACTIONS: e.refinements.append(action.removeprefix("element_refine_"))
         else: e.doctrine = action.removeprefix("element_doctrine_")
         e.camps.append({"floor": state.round_no, "action": action})
         e.camp_due = False
         reward = ("休整恢复" + str(e.hp-before) + "生命" if action == "element_rest" else
                   "所有牌基础伤害永久+1" if action == "element_attune" else
+                  refinement_text(e, e.refinements[-1]) if action in REFINE_ACTIONS else
                   "学习【" + DOCTRINES[e.doctrine][0] + "】：" + DOCTRINES[e.doctrine][1])
         _record(state, action, points=0, text=f"营地：{reward.rstrip('。')}。本次不再领取其他营地奖励。")
         return "ELEMENT_CAMP_CHOSEN"
@@ -431,7 +491,8 @@ def perform(state, action, expected_round):
     state.score += effect["damage"]
     _record(state, action, points=effect["damage"], **effect,
             text=f"{CARDS[key].name}：{effect['reaction'] or '无反应'}，生命伤害{effect['damage']}、削盾{effect['barrier_damage']}，治疗{effect['heal']}，护盾{e.block}。"
-                 + (f"【{DOCTRINES[effect['doctrine_trigger']][0]}】本回合首次反应已触发。" if effect['doctrine_trigger'] else ""))
+                 + (f"【{DOCTRINES[effect['doctrine_trigger']][0]}】本回合首次反应已触发。" if effect['doctrine_trigger'] else "")
+                 + (f"精炼【{effect['refinement']}】已生效。" if effect.get('refinement') else ""))
     return _finish_floor(state) if e.enemy_hp == 0 else "ELEMENT_PLAYED"
 
 
@@ -477,16 +538,20 @@ def preview(state):
             options += [{"choice_id": "element_doctrine_" + key, "title": "流派 · " + title,
                          "description": text + "本局只能学一种且不能更换；本次放弃回血和永久加伤。",
                          "enabled": True, "kind": "doctrine"} for key, (title, text) in DOCTRINES.items()]
+        options += [{"choice_id": "element_refine_" + key, "title": "精炼 · " + CARDS[key].name,
+                     "description": REFINEMENTS[key][1] + "本局永久生效；此牌不能重复精炼，本次放弃回血、共鸣和流派。",
+                     "enabled": True, "kind": "refine", "element": key} for key in refinement_offers(state)]
     elif phase == "combat":
         for key in e.hand:
             card = CARDS[key]
             enabled = card.cost <= e.energy
             after, effect = card_effect(e, key) if enabled else (e, {})
-            options.append({"choice_id": "element_" + key, "title": card.name,
+            options.append({"choice_id": "element_" + key, "title": card.name + (" · 精炼" if key in e.refinements else ""),
                 "description": (f"{effect['reaction'] or '无反应'}：伤害{effect['damage']}、削盾{effect['barrier_damage']}；治疗{effect['heal']}，护盾→{after.block}。 " if enabled else "能量不足。 ")
-                               + (f"触发【{DOCTRINES[effect['doctrine_trigger']][0]}】，结算后能量{after.energy}。 " if effect.get('doctrine_trigger') else "") + card.text,
+                               + (f"触发【{DOCTRINES[effect['doctrine_trigger']][0]}】，结算后能量{after.energy}。 " if effect.get('doctrine_trigger') else "") + card_text(e, key)
+                               + (" " + refinement_text(e, key) if key in e.refinements else ""),
                 "enabled": enabled, "cost": card.cost, "element": key, "points_awarded": effect.get("damage", 0),
-                "focus_after": after.energy, **effect})
+                "focus_after": after.energy, "refined": key in e.refinements, **effect})
         if e.edition >= 2 and not e.hold_used:
             options += [{"choice_id": "element_hold_" + key, "title": "留牌 · " + CARDS[key].name,
                          "description": "本回合限一次，不花能量；这张未使用的牌留到下回合，再抽至4张。若现在打出它，则不再保留。不能带到下一层。",
@@ -546,8 +611,20 @@ def preview(state):
             "last": last, "draw_count": len(e.draw), "discard_count": len(e.discard),
             "hand_count": len(e.hand), "guide": list(REACTION_GUIDE),
             "cards": [{"element": k, "title": c.name, "cost": c.cost, "damage": c.damage+e.power+(SECRET_POWER if state.round_no==11 else 0),
-                       "description": c.text} for k,c in CARDS.items()]}}
+                       "description": card_text(e, k)} for k,c in CARDS.items()]}}
     hidden = e.secret in {"active", "won", "lost"}
+    if e.edition >= 5:
+        view["elemental"]["refinements"] = [{"element": key, "title": REFINEMENTS[key][0],
+                                              "description": REFINEMENTS[key][1]} for key in e.refinements]
+        if phase == "camp":
+            view["hint"] += "本营地另有固定3个精炼候选，可选1张永久强化；每牌限一次，与其他奖励互斥。"
+        for row in view["elemental"]["cards"]:
+            key = row["element"]
+            row["refined"] = key in e.refinements
+            if row["refined"]:
+                row["title"] += " · 精炼"
+                row["description"] += " " + refinement_text(e, key)
+                if key == "pyro": row["damage"] += 4
     view["elemental"].update(secret=e.secret, base_clear_hp=e.base_clear_hp,
                              max_energy=energy_cap(e), max_hand=hand_cap(e),
                              damage_buff=SECRET_POWER if hidden else 0,

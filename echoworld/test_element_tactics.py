@@ -135,7 +135,7 @@ class TacticsApi(unittest.TestCase):
         return next(x["choice_id"] for x in self.state()["combat"]["options"] if x.get("kind")=="hold")
 
     def test_hold_receipt_cas_restart_and_old_save_not_upgraded(self):
-        self.start();self.assertEqual(self.state()["combat"]["elemental"]["edition"],4)
+        self.start();self.assertEqual(self.state()["combat"]["elemental"]["edition"],5)
         body=self.body(self.hold_action(),"hold-one");response=self.post(body).json()
         self.assertEqual(response["code"],"ELEMENT_HELD")
         self.assertEqual(self.post(body).json(),response)

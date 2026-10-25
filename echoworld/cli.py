@@ -198,7 +198,7 @@ def main() -> None:
                     mode = {"tower": TACTICAL_RULESET, "tower_blessed": BLESSED_RULESET,
                             "tower_expedition": EXPEDITION_RULESET, "tower_spire": SPIRE_RULESET,
                             "tower_routes": ROUTES_RULESET, "tower_cards": CARDS_RULESET, "tower_elements": ELEMENTS_RULESET}[command]
-                    combat = start_combat(state, seed=args.seed, ruleset=mode, elements_edition=4)
+                    combat = start_combat(state, seed=args.seed, ruleset=mode, elements_edition=5)
                     print("爬塔开始。七元素模式请用element_*出牌/结束回合；其他模式按各自规则预览行动。")
                     show_scene(combat)
             else:
